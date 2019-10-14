@@ -8,7 +8,7 @@
 
 ```toml
 thrift = "x.y.z" # x.y.z is the version of the thrift compiler
-ordered_float = "0.3.0"
+ordered-float = "0.3.0"
 try_from = "0.2.0"
 ```
 
@@ -37,11 +37,11 @@ extern crate try_from;
 // generated Rust module
 mod tutorial;
 
-use std::cell::RefCell;
-use std::rc::Rc;
-use thrift::protocol::{TInputProtocol, TOutputProtocol};
 use thrift::protocol::{TCompactInputProtocol, TCompactOutputProtocol};
-use thrift::transport::{TFramedTransport, TTcpTransport, TTransport};
+use thrift::protocol::{TInputProtocol, TOutputProtocol};
+use thrift::transport::{TFramedReadTransport, TFramedWriteTransport};
+use thrift::transport::{TIoChannel, TTcpChannel};
+
 use tutorial::{CalculatorSyncClient, TCalculatorSyncClient};
 use tutorial::{Operation, Work};
 
@@ -61,31 +61,19 @@ fn run() -> thrift::Result<()> {
     //
 
     println!("connect to server on 127.0.0.1:9090");
-    let mut t = TTcpTransport::new();
-    let t = match t.open("127.0.0.1:9090") {
-        Ok(()) => t,
-        Err(e) => {
-            return Err(
-                format!("failed to connect with {:?}", e).into()
-            );
-        }
-    };
+    let mut c = TTcpChannel::new();
+    c.open("127.0.0.1:9090")?;
 
-    let t = Rc::new(RefCell::new(
-        Box::new(t) as Box<TTransport>
-    ));
-    let t = Rc::new(RefCell::new(
-        Box::new(TFramedTransport::new(t)) as Box<TTransport>
-    ));
-
-    let i_prot: Box<TInputProtocol> = Box::new(
-        TCompactInputProtocol::new(t.clone())
+    let (i_chan, o_chan) = c.split()?;
+    
+    let i_prot = TCompactInputProtocol::new(
+        TFramedReadTransport::new(i_chan)
     );
-    let o_prot: Box<TOutputProtocol> = Box::new(
-        TCompactOutputProtocol::new(t.clone())
+    let o_prot = TCompactOutputProtocol::new(
+        TFramedWriteTransport::new(o_chan)
     );
 
-    let client = CalculatorSyncClient::new(i_prot, o_prot);
+    let mut client = CalculatorSyncClient::new(i_prot, o_prot);
 
     //
     // alright! - let's make some calls
@@ -97,14 +85,14 @@ fn run() -> thrift::Result<()> {
     // two-way with some return
     let res = client.calculate(
         72,
-        Work::new(7, 8, Operation::MULTIPLY, None)
+        Work::new(7, 8, Operation::Multiply, None)
     )?;
     println!("multiplied 7 and 8, got {}", res);
 
     // two-way and returns a Thrift-defined exception
     let res = client.calculate(
         77,
-        Work::new(2, 0, Operation::DIVIDE, None)
+        Work::new(2, 0, Operation::Divide, None)
     );
     match res {
         Ok(v) => panic!("shouldn't have succeeded with result {}", v),
@@ -177,10 +165,10 @@ A typedef is translated to a `pub type` declaration.
 ```thrift
 typedef i64 UserId
 
-typedef map<string, Bonk> MapType
+typedef map<string, UserId> MapType
 ```
 ```rust
-pub type UserId = 164;
+pub type UserId = i64;
 
 pub type MapType = BTreeMap<String, Bonk>;
 ```

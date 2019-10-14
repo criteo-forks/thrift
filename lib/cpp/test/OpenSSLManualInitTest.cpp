@@ -28,7 +28,6 @@
 #include <openssl/evp.h>
 #include <thrift/transport/TSSLSocket.h>
 
-using namespace std;
 using namespace apache::thrift::transport;
 
 void make_isolated_sslsocketfactory() {
@@ -63,7 +62,7 @@ void test_openssl_availability() {
   // uninitialized.  It might also fail on very old versions of
   // OpenSSL...
   const EVP_MD* md = EVP_get_digestbyname("SHA256");
-  BOOST_CHECK(md != NULL);
+  BOOST_CHECK(md != nullptr);
   openssl_cleanup();
 }
 

@@ -16,7 +16,7 @@
 # specific language governing permissions and limitations
 # under the License.
 #
-AUTOMAKE_OPTIONS = subdir-objects serial-tests
+AUTOMAKE_OPTIONS = subdir-objects serial-tests nostdinc
 
 BUILT_SOURCES = gen-cpp/shared_types.cpp \
                 gen-cpp/tutorial_types.cpp
@@ -61,8 +61,6 @@ TutorialClient_LDADD = \
 #
 # Common thrift code generation rules
 #
-THRIFT = $(top_builddir)/compiler/cpp/thrift
-
 gen-cpp/Calculator.cpp gen-cpp/SharedService.cpp gen-cpp/shared_constants.cpp gen-cpp/shared_types.cpp gen-cpp/tutorial_constants.cpp gen-cpp/tutorial_types.cpp: $(top_srcdir)/tutorial/tutorial.thrift
 	$(THRIFT) --gen cpp -r $<
 

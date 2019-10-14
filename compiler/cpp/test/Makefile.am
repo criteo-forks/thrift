@@ -21,31 +21,8 @@
 # Please see doc/old-thrift-license.txt in the Thrift distribution for
 # details.
 
-AUTOMAKE_OPTIONS = subdir-objects serial-tests
+AUTOMAKE_OPTIONS = subdir-objects serial-tests nostdinc
 
 AM_CPPFLAGS = $(BOOST_CPPFLAGS) -I$(top_srcdir)/compiler/cpp/src
 AM_LDFLAGS = $(BOOST_LDFLAGS)
 AM_CXXFLAGS = -Wall -Wextra -pedantic
-
-if WITH_PLUGIN
-check_PROGRAMS = plugintest
-
-noinst_PROGRAMS = thrift-gen-mycpp
-
-AM_CPPFLAGS += -I$(top_srcdir)/lib/cpp/src -I$(top_builddir)/lib/cpp/src
-
-plugintest_SOURCES = plugin/conversion_test.cc
-plugintest_LDADD = $(top_builddir)/compiler/cpp/libthriftc.la
-
-thrift_gen_mycpp_SOURCES = plugin/cpp_plugin.cc \
-                           plugin/t_cpp_generator.cc
-thrift_gen_mycpp_CPPFLAGS = $(AM_CPPFLAGS) -I$(top_srcdir)/compiler/cpp -I$(top_srcdir)/compiler/cpp/src/generate
-thrift_gen_mycpp_LDADD = $(top_builddir)/compiler/cpp/libthriftc.la
-
-cpp_plugin_test.sh: thrift-gen-mycpp
-TESTS = $(check_PROGRAMS) cpp_plugin_test.sh
-
-clean-local:
-	$(RM) -rf gen-cpp gen-mycpp
-
-endif

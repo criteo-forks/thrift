@@ -17,10 +17,14 @@
 # under the License.
 #
 
+# The test executables still depend on Boost
+include(BoostMacros)
+REQUIRE_BOOST_HEADERS()
+set(BOOST_COMPONENTS filesystem program_options random)
+REQUIRE_BOOST_LIBRARIES(BOOST_COMPONENTS)
+
 # Contains the thrift specific LINK_AGAINST_THRIFT_LIBRARY
 include(ThriftMacros)
-
-include_directories(SYSTEM "${Boost_INCLUDE_DIRS}")
 
 find_package(OpenSSL REQUIRED)
 include_directories(SYSTEM "${OPENSSL_INCLUDE_DIR}")
@@ -28,12 +32,16 @@ include_directories(SYSTEM "${OPENSSL_INCLUDE_DIR}")
 find_package(Libevent REQUIRED)  # Libevent comes with CMake support from upstream
 include_directories(SYSTEM ${LIBEVENT_INCLUDE_DIRS})
 
+find_package(ZLIB REQUIRED)
+include_directories(SYSTEM ${ZLIB_INCLUDE_DIRS})
+
 #Make sure gen-cpp files can be included
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 include_directories("${CMAKE_CURRENT_BINARY_DIR}/gen-cpp")
 include_directories("${PROJECT_SOURCE_DIR}/lib/cpp/src")
 
 set(crosstestgencpp_SOURCES
+    gen-cpp/SecondService.cpp
     gen-cpp/ThriftTest.cpp
     gen-cpp/ThriftTest_types.cpp
     gen-cpp/ThriftTest_constants.cpp
@@ -44,7 +52,7 @@ LINK_AGAINST_THRIFT_LIBRARY(crosstestgencpp thrift)
 
 set(crossstressgencpp_SOURCES
     gen-cpp/Service.cpp
-    #gen-cpp/StressTest_types.cpp #basically empty, so omitting
+    gen-cpp/StressTest_types.cpp
     gen-cpp/StressTest_constants.cpp
 )
 add_library(crossstressgencpp STATIC ${crossstressgencpp_SOURCES})
@@ -67,6 +75,7 @@ target_link_libraries(StressTest crossstressgencpp ${Boost_LIBRARIES} ${LIBEVENT
 LINK_AGAINST_THRIFT_LIBRARY(StressTest thrift)
 LINK_AGAINST_THRIFT_LIBRARY(StressTest thriftnb)
 add_test(NAME StressTest COMMAND StressTest)
+add_test(NAME StressTestConcurrent COMMAND StressTest --client-type=concurrent)
 
 add_executable(StressTestNonBlocking src/StressTestNonBlocking.cpp)
 target_link_libraries(StressTestNonBlocking crossstressgencpp ${Boost_LIBRARIES} ${LIBEVENT_LIB})
@@ -79,7 +88,7 @@ add_test(NAME StressTestNonBlocking COMMAND StressTestNonBlocking)
 # Common thrift code generation rules
 #
 
-add_custom_command(OUTPUT gen-cpp/ThriftTest.cpp gen-cpp/ThriftTest_types.cpp gen-cpp/ThriftTest_constants.cpp
+add_custom_command(OUTPUT gen-cpp/SecondService.cpp gen-cpp/SecondService.h gen-cpp/ThriftTest.cpp gen-cpp/ThriftTest.h gen-cpp/ThriftTest_types.cpp gen-cpp/ThriftTest_constants.cpp
     COMMAND ${THRIFT_COMPILER} --gen cpp:templates,cob_style -r ${PROJECT_SOURCE_DIR}/test/ThriftTest.thrift
 )
 

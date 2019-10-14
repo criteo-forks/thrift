@@ -50,11 +50,9 @@ struct _ThriftSocket
 
   /* private */
   gchar *hostname;
-  gshort port;
+  guint port;
+  gchar *path;
   int sd;
-  guint8 *buf;
-  guint32 buf_size;
-  guint32 buf_len;
 };
 
 typedef struct _ThriftSocketClass ThriftSocketClass;

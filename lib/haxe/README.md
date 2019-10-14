@@ -44,9 +44,9 @@ target libraries need to be installed and how to achieve this.
 Haxe on Linux 
 ---------------
 
-For Linux platforms it is recommended not to download the 
-binaries manually, instead use the Haxe installation shell 
-script which can be found at `http://www.openfl.org/download`.
+For Linux platforms it is recommended to use the distro-specific package
+manager, where possible. More detailed information can be found at the 
+Haxe Linux download section: http://haxe.org/download/linux
 
 If you run into the error message 
 
@@ -69,14 +69,12 @@ Thrift Haxe bindings
 Thrift Haxe bindings can be set up via the `haxelib` tool  
 either from the official ASF repo, or via the github mirror.
 
-- To set up any **stable version**, choose the appropriate branch (e.g. `0.9.3`):
+- To set up any **stable version**, choose the appropriate branch (e.g. `0.12.0`):
 
-    - `haxelib git thrift https://git.apache.org/thrift.git 0.9.3 lib/haxe`
-    - `haxelib git thrift https://github.com/apache/thrift.git 0.9.3 lib/haxe`
+    - `haxelib git thrift https://github.com/apache/thrift.git 0.12.0 lib/haxe`
 
 - To set up the current **development version**, use the `master` branch:
   
-    - `haxelib git thrift https://git.apache.org/thrift.git master lib/haxe`	
     - `haxelib git thrift https://github.com/apache/thrift.git master lib/haxe`
 
 As usual, the installed library can be updated using `haxelib upgrade` 

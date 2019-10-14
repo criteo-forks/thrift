@@ -18,7 +18,6 @@
  */
 
 #include <algorithm>
-#include <boost/bind.hpp>
 #include <stdexcept>
 #include <stdint.h>
 #include <thrift/server/TServerFramework.h>
@@ -28,14 +27,14 @@ namespace thrift {
 namespace server {
 
 using apache::thrift::concurrency::Synchronized;
+using apache::thrift::protocol::TProtocol;
+using apache::thrift::protocol::TProtocolFactory;
+using std::bind;
+using std::shared_ptr;
 using apache::thrift::transport::TServerTransport;
 using apache::thrift::transport::TTransport;
 using apache::thrift::transport::TTransportException;
 using apache::thrift::transport::TTransportFactory;
-using apache::thrift::protocol::TProtocol;
-using apache::thrift::protocol::TProtocolFactory;
-using boost::bind;
-using boost::shared_ptr;
 using std::string;
 
 TServerFramework::TServerFramework(const shared_ptr<TProcessorFactory>& processorFactory,
@@ -92,8 +91,7 @@ TServerFramework::TServerFramework(const shared_ptr<TProcessor>& processor,
     limit_(INT64_MAX) {
 }
 
-TServerFramework::~TServerFramework() {
-}
+TServerFramework::~TServerFramework() = default;
 
 template <typename T>
 static void releaseOneDescriptor(const string& name, T& pTransport) {
@@ -162,7 +160,7 @@ void TServerFramework::serve() {
                                outputProtocol,
                                eventHandler_,
                                client),
-          bind(&TServerFramework::disposeConnectedClient, this, _1)));
+          bind(&TServerFramework::disposeConnectedClient, this, std::placeholders::_1)));
 
     } catch (TTransportException& ttx) {
       releaseOneDescriptor("inputTransport", inputTransport);
@@ -221,7 +219,7 @@ void TServerFramework::stop() {
   serverTransport_->interrupt();
 }
 
-void TServerFramework::newlyConnectedClient(const boost::shared_ptr<TConnectedClient>& pClient) {
+void TServerFramework::newlyConnectedClient(const shared_ptr<TConnectedClient>& pClient) {
   {
     Synchronized sync(mon_);
     ++clients_;

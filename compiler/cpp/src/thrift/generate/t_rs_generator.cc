@@ -31,10 +31,9 @@ using std::string;
 using std::vector;
 using std::set;
 
-static const string endl = "\n"; // avoid ostream << std::endl flushes
-
-static const string SERVICE_RESULT_VARIABLE = "result_value";
-static const string RESULT_STRUCT_SUFFIX = "Result";
+static const string endl("\n"); // avoid ostream << std::endl flushes
+static const string SERVICE_RESULT_VARIABLE("result_value");
+static const string RESULT_STRUCT_SUFFIX("Result");
 static const string RUST_RESERVED_WORDS[] = {
   "abstract", "alignof", "as", "become",
   "box", "break", "const", "continue",
@@ -55,6 +54,9 @@ const set<string> RUST_RESERVED_WORDS_SET(
   RUST_RESERVED_WORDS + sizeof(RUST_RESERVED_WORDS)/sizeof(RUST_RESERVED_WORDS[0])
 );
 
+static const string SYNC_CLIENT_GENERIC_BOUND_VARS("<IP, OP>");
+static const string SYNC_CLIENT_GENERIC_BOUNDS("where IP: TInputProtocol, OP: TOutputProtocol");
+
 // FIXME: extract common TMessageIdentifier function
 // FIXME: have to_rust_type deal with Option
 
@@ -72,19 +74,19 @@ public:
    * Init and close methods
    */
 
-  void init_generator();
-  void close_generator();
+  void init_generator() override;
+  void close_generator() override;
 
   /**
    * Program-level generation functions
    */
 
-  void generate_typedef(t_typedef* ttypedef);
-  void generate_enum(t_enum* tenum);
-  void generate_const(t_const* tconst);
-  void generate_struct(t_struct* tstruct);
-  void generate_xception(t_struct* txception);
-  void generate_service(t_service* tservice);
+  void generate_typedef(t_typedef* ttypedef) override;
+  void generate_enum(t_enum* tenum) override;
+  void generate_const(t_const* tconst) override;
+  void generate_struct(t_struct* tstruct) override;
+  void generate_xception(t_struct* txception) override;
+  void generate_service(t_service* tservice) override;
 
 private:
   // struct type
@@ -98,7 +100,7 @@ private:
   string gen_dir_;
 
   // File to which generated code is written.
-  std::ofstream f_gen_;
+  ofstream_with_content_based_conditional_update f_gen_;
 
   // Write the common compiler attributes and module includes to the top of the auto-generated file.
   void render_attributes_and_includes();
@@ -125,7 +127,7 @@ private:
   void render_const_value_holder(const string& name, t_type* ttype, t_const_value* tvalue);
 
   // Write the actual const value - the right side of a const definition.
-  void render_const_value(t_type* ttype, t_const_value* tvalue);
+  void render_const_value(t_type* ttype, t_const_value* tvalue, bool is_owned = true);
 
   // Write a const struct (returned from `const_value` method).
   void render_const_struct(t_type* ttype, t_const_value* tvalue);
@@ -245,13 +247,21 @@ private:
   // rendered code is calling such a function it has to dereference `v`.
   bool needs_deref_on_container_write(t_type* ttype);
 
+  // Return the variable (including all dereferences) required to write values from a rust container
+  // to the output protocol. For example, if you were iterating through a container and using the temp
+  // variable `v` to represent each element, then `ttype` is the type stored in the container and
+  // `base_var` is "v". The return value is the actual string you will have to use to properly reference
+  // the temp variable for writing to the output protocol.
+  string string_container_write_variable(t_type* ttype, const string& base_var);
+
   // Write the code to read bytes from the wire into the given `t_struct`. `struct_name` is the
   // actual Rust name of the `t_struct`. If `struct_type` is `T_ARGS` then all struct fields are
   // necessary. Otherwise, the field's default optionality is used.
   void render_struct_sync_read(const string &struct_name, t_struct *tstruct, t_rs_generator::e_struct_type struct_type);
 
   // Write the rust function that deserializes a single type (i.e. i32 etc.) from its wire representation.
-  void render_type_sync_read(const string &type_var, t_type *ttype);
+  // Set `is_boxed` to `true` if the resulting value should be wrapped in a `Box::new(...)`.
+  void render_type_sync_read(const string &type_var, t_type *ttype, bool is_boxed = false);
 
   // Read the wire representation of a list and convert it to its corresponding rust implementation.
   // The deserialized list is stored in `list_variable`.
@@ -340,26 +350,44 @@ private:
   void render_sync_handler_failed_default_exception_branch(t_function *tfunc);
   void render_sync_handler_send_exception_response(t_function *tfunc, const string &err_var);
   void render_service_call_structs(t_service* tservice);
-  void render_result_value_struct(t_function* tfunc);
+  void render_service_call_args_struct(t_function* tfunc);
+  void render_service_call_result_value_struct(t_function* tfunc);
 
   string handler_successful_return_struct(t_function* tfunc);
 
-  void render_rift_error(
+  // Writes the result of `render_thrift_error_struct` wrapped in an `Err(thrift::Error(...))`.
+  void render_thrift_error(
     const string& error_kind,
     const string& error_struct,
     const string& sub_error_kind,
     const string& error_message
   );
-  void render_rift_error_struct(
+
+  // Write a thrift::Error variant struct. Error structs take the form:
+  // ```
+  // pub struct error_struct {
+  //   kind: sub_error_kind,
+  //   message: error_message,
+  // }
+  // ```
+  // A concrete example is:
+  // ```
+  //  pub struct ApplicationError {
+  //    kind: ApplicationErrorKind::Unknown,
+  //    message: "This is some error message",
+  //  }
+  // ```
+  void render_thrift_error_struct(
     const string& error_struct,
     const string& sub_error_kind,
     const string& error_message
   );
 
   // Return a string containing all the unpacked service call args given a service call function
-  // `t_function`. Prepends the args with `&mut self` and includes the arg types in the returned string,
-  // for example: `fn foo(&mut self, field_0: String)`.
-  string rust_sync_service_call_declaration(t_function* tfunc);
+  // `t_function`. Prepends the args with either `&mut self` or `&self` and includes the arg types
+  // in the returned string, for example:
+  // `fn foo(&mut self, field_0: String)`.
+  string rust_sync_service_call_declaration(t_function* tfunc, bool self_is_mutable);
 
   // Return a string containing all the unpacked service call args given a service call function
   // `t_function`. Only includes the arg names, each of which is prefixed with the optional prefix
@@ -377,8 +405,14 @@ private:
   // Write the documentation for a struct, service-call or other documentation-annotated element.
   void render_rustdoc(t_doc* tdoc);
 
+  // Return `true` if the true type of `ttype` is a thrift double, `false` otherwise.
+  bool is_double(t_type* ttype);
+
   // Return a string representing the rust type given a `t_type`.
   string to_rust_type(t_type* ttype, bool ordered_float = true);
+
+  // Return a string representing the `const` rust type given a `t_type`
+  string to_rust_const_type(t_type* ttype, bool ordered_float = true);
 
   // Return a string representing the rift `protocol::TType` given a `t_type`.
   string to_rust_field_type_enum(t_type* ttype);
@@ -443,6 +477,9 @@ private:
   // Return the name of the function that users will have to implement to handle incoming service calls.
   string service_call_handler_function_name(t_function* tfunc);
 
+  // Return the name of the struct used to pack the arguments for the thrift service call.
+  string service_call_args_struct_name(t_function* tfunc);
+
   // Return the name of the struct used to pack the return value
   // and user-defined exceptions for the thrift service call.
   string service_call_result_struct_name(t_function* tfunc);
@@ -465,6 +502,9 @@ private:
   // the server half of a Thrift service.
   string rust_sync_processor_impl_name(t_service *tservice);
 
+  // Return the variant name for an enum variant
+  string rust_enum_variant_name(const string& name);
+
   // Properly uppercase names for use in Rust.
   string rust_upper_case(const string& name);
 
@@ -476,6 +516,10 @@ private:
 
   // Replace all instances of `search_string` with `replace_string` in `target`.
   void string_replace(string& target, const string& search_string, const string& replace_string);
+
+  // Adjust field identifier to correctly handle unspecified field identifiers
+  // THRIFT-4953
+  string rust_safe_field_id(int32_t id);
 };
 
 void t_rs_generator::init_generator() {
@@ -499,26 +543,28 @@ void t_rs_generator::render_attributes_and_includes() {
 
   // code always includes BTreeMap/BTreeSet/OrderedFloat
   f_gen_ << "#![allow(unused_imports)]" << endl;
+  // code might not include imports from crates
+  f_gen_ << "#![allow(unused_extern_crates)]" << endl;
   // constructors take *all* struct parameters, which can trigger the "too many arguments" warning
   // some auto-gen'd types can be deeply nested. clippy recommends factoring them out which is hard to autogen
   f_gen_ << "#![cfg_attr(feature = \"cargo-clippy\", allow(too_many_arguments, type_complexity))]" << endl;
+  // prevent rustfmt from running against this file
+  // lines are too long, code is (thankfully!) not visual-indented, etc.
+  f_gen_ << "#![cfg_attr(rustfmt, rustfmt_skip)]" << endl;
   f_gen_ << endl;
 
   // add standard includes
-  f_gen_ << "extern crate ordered_float;" << endl;
   f_gen_ << "extern crate thrift;" << endl;
-  f_gen_ << "extern crate try_from;" << endl;
   f_gen_ << endl;
-  f_gen_ << "use ordered_float::OrderedFloat;" << endl;
+  f_gen_ << "use thrift::OrderedFloat;" << endl;
   f_gen_ << "use std::cell::RefCell;" << endl;
   f_gen_ << "use std::collections::{BTreeMap, BTreeSet};" << endl;
-  f_gen_ << "use std::convert::From;" << endl;
+  f_gen_ << "use std::convert::{From, TryFrom};" << endl;
   f_gen_ << "use std::default::Default;" << endl;
   f_gen_ << "use std::error::Error;" << endl;
   f_gen_ << "use std::fmt;" << endl;
   f_gen_ << "use std::fmt::{Display, Formatter};" << endl;
   f_gen_ << "use std::rc::Rc;" << endl;
-  f_gen_ << "use try_from::TryFrom;" << endl;
   f_gen_ << endl;
   f_gen_ << "use thrift::{ApplicationError, ApplicationErrorKind, ProtocolError, ProtocolErrorKind, TThriftClient};" << endl;
   f_gen_ << "use thrift::protocol::{TFieldIdentifier, TListIdentifier, TMapIdentifier, TMessageIdentifier, TMessageType, TInputProtocol, TOutputProtocol, TSetIdentifier, TStructIdentifier, TType};" << endl;
@@ -606,8 +652,8 @@ void t_rs_generator::render_const_value(const string& name, t_type* ttype, t_con
     throw "cannot generate simple rust constant for " + ttype->get_name();
   }
 
-  f_gen_ << "pub const " << rust_upper_case(name) << ": " << to_rust_type(ttype) << " = ";
-  render_const_value(ttype, tvalue);
+  f_gen_ << "pub const " << rust_upper_case(name) << ": " << to_rust_const_type(ttype) << " = ";
+  render_const_value(ttype, tvalue, false);
   f_gen_ << ";" << endl;
   f_gen_ << endl;
 }
@@ -634,15 +680,22 @@ void t_rs_generator::render_const_value_holder(const string& name, t_type* ttype
   f_gen_ << endl;
 }
 
-void t_rs_generator::render_const_value(t_type* ttype, t_const_value* tvalue) {
+void t_rs_generator::render_const_value(t_type* ttype, t_const_value* tvalue, bool is_owned) {
   if (ttype->is_base_type()) {
     t_base_type* tbase_type = (t_base_type*)ttype;
     switch (tbase_type->get_base()) {
     case t_base_type::TYPE_STRING:
       if (tbase_type->is_binary()) {
-        f_gen_ << "\"" << tvalue->get_string() << "\""<<  ".to_owned().into_bytes()";
+        if (is_owned) {
+          f_gen_ << "\"" << tvalue->get_string() << "\""<<  ".to_owned().into_bytes()";
+        } else {
+          f_gen_ << "b\"" << tvalue->get_string() << "\"";
+        }
       } else {
-        f_gen_ << "\"" << tvalue->get_string() << "\""<<  ".to_owned()";
+        f_gen_ << "\"" << tvalue->get_string() << "\"";
+        if (is_owned) {
+          f_gen_ << ".to_owned()";
+        }
       }
       break;
     case t_base_type::TYPE_BOOL:
@@ -655,10 +708,7 @@ void t_rs_generator::render_const_value(t_type* ttype, t_const_value* tvalue) {
       f_gen_ << tvalue->get_integer();
       break;
     case t_base_type::TYPE_DOUBLE:
-      f_gen_
-        << indent()
-        << "OrderedFloat::from(" << tvalue->get_double() << ")"
-        << endl;
+      f_gen_ << "OrderedFloat::from(" << tvalue->get_double() << " as f64)";
       break;
     default:
       throw "cannot generate const value for " + t_base_type::t_base_name(tbase_type->get_base());
@@ -749,8 +799,8 @@ void t_rs_generator::render_const_map(t_type* ttype, t_const_value* tvalue) {
     << to_rust_type(key_type) << ", " << to_rust_type(val_type)
     << "> = BTreeMap::new();"
     << endl;
-  const map<t_const_value*, t_const_value*>& elems = tvalue->get_map();
-  map<t_const_value*, t_const_value*>::const_iterator elem_iter;
+  const map<t_const_value*, t_const_value*, t_const_value::value_compare>& elems = tvalue->get_map();
+  map<t_const_value*, t_const_value*, t_const_value::value_compare>::const_iterator elem_iter;
   for (elem_iter = elems.begin(); elem_iter != elems.end(); ++elem_iter) {
     t_const_value* key_value = elem_iter->first;
     t_const_value* val_value = elem_iter->second;
@@ -826,7 +876,7 @@ void t_rs_generator::generate_enum(t_enum* tenum) {
 
 void t_rs_generator::render_enum_definition(t_enum* tenum, const string& enum_name) {
   render_rustdoc((t_doc*) tenum);
-  f_gen_ << "#[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]" << endl;
+  f_gen_ << "#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]" << endl;
   f_gen_ << "pub enum " << enum_name << " {" << endl;
   indent_up();
 
@@ -837,7 +887,7 @@ void t_rs_generator::render_enum_definition(t_enum* tenum, const string& enum_na
     render_rustdoc((t_doc*) val);
     f_gen_
       << indent()
-      << uppercase(val->get_name())
+      << rust_enum_variant_name(val->get_name())
       << " = "
       << val->get_value()
       << ","
@@ -855,7 +905,7 @@ void t_rs_generator::render_enum_impl(const string& enum_name) {
 
   f_gen_
     << indent()
-    << "pub fn write_to_out_protocol(&self, o_prot: &mut TOutputProtocol) -> thrift::Result<()> {"
+    << "pub fn write_to_out_protocol(&self, o_prot: &mut dyn TOutputProtocol) -> thrift::Result<()> {"
     << endl;
   indent_up();
   f_gen_ << indent() << "o_prot.write_i32(*self as i32)" << endl;
@@ -864,7 +914,7 @@ void t_rs_generator::render_enum_impl(const string& enum_name) {
 
   f_gen_
     << indent()
-    << "pub fn read_from_in_protocol(i_prot: &mut TInputProtocol) -> thrift::Result<" << enum_name << "> {"
+    << "pub fn read_from_in_protocol(i_prot: &mut dyn TInputProtocol) -> thrift::Result<" << enum_name << "> {"
     << endl;
   indent_up();
 
@@ -883,9 +933,9 @@ void t_rs_generator::render_enum_conversion(t_enum* tenum, const string& enum_na
   f_gen_ << "impl TryFrom<i32> for " << enum_name << " {" << endl;
   indent_up();
 
-  f_gen_ << indent() << "type Err = thrift::Error;";
+  f_gen_ << indent() << "type Error = thrift::Error;";
 
-  f_gen_ << indent() << "fn try_from(i: i32) -> Result<Self, Self::Err> {" << endl;
+  f_gen_ << indent() << "fn try_from(i: i32) -> Result<Self, Self::Error> {" << endl;
   indent_up();
 
   f_gen_ << indent() << "match i {" << endl;
@@ -898,12 +948,12 @@ void t_rs_generator::render_enum_conversion(t_enum* tenum, const string& enum_na
     f_gen_
       << indent()
       << val->get_value()
-      << " => Ok(" << enum_name << "::" << uppercase(val->get_name()) << "),"
+      << " => Ok(" << enum_name << "::" << rust_enum_variant_name(val->get_name()) << "),"
       << endl;
   }
   f_gen_ << indent() << "_ => {" << endl;
   indent_up();
-  render_rift_error(
+  render_thrift_error(
     "Protocol",
     "ProtocolError",
     "ProtocolErrorKind::InvalidData",
@@ -965,7 +1015,7 @@ void t_rs_generator::render_struct_definition(
   t_rs_generator::e_struct_type struct_type
 ) {
   render_rustdoc((t_doc*) tstruct);
-  f_gen_ << "#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]" << endl;
+  f_gen_ << "#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]" << endl;
   f_gen_ << visibility_qualifier(struct_type) << "struct " << struct_name << " {" << endl;
 
   // render the members
@@ -1126,8 +1176,8 @@ void t_rs_generator::render_struct_constructor(
         generic_type_parameters << ", ";
         generic_type_qualifiers << ", ";
       }
-      generic_type_parameters << "F" << member->get_key();
-      generic_type_qualifiers << "F" << member->get_key() << ": Into<Option<" << to_rust_type(member->get_type()) << ">>";
+      generic_type_parameters << "F" << rust_safe_field_id(member->get_key());
+      generic_type_qualifiers << "F" << rust_safe_field_id(member->get_key()) << ": Into<Option<" << to_rust_type(member->get_type()) << ">>";
     }
   }
 
@@ -1158,7 +1208,7 @@ void t_rs_generator::render_struct_constructor(
     }
 
     if (is_optional(member_req)) {
-      args << member_name << ": " << "F" << member->get_key();
+      args << member_name << ": " << "F" << rust_safe_field_id(member->get_key());
     } else {
       args << member_name << ": " << to_rust_type(member->get_type());
     }
@@ -1284,7 +1334,7 @@ void t_rs_generator::render_result_struct_to_result_method(t_struct* tstruct) {
     indent_up();
     // if we haven't found a valid return value *or* a user exception
     // then we're in trouble; return a default error
-    render_rift_error(
+    render_thrift_error(
       "Application",
       "ApplicationError",
       "ApplicationErrorKind::MissingResult",
@@ -1311,7 +1361,7 @@ void t_rs_generator::render_union_definition(const string& union_name, t_struct*
     throw "cannot generate rust enum with 0 members"; // may be valid thrift, but it's invalid rust
   }
 
-  f_gen_ << "#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]" << endl;
+  f_gen_ << "#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]" << endl;
   f_gen_ << "pub enum " << union_name << " {" << endl;
   indent_up();
 
@@ -1355,7 +1405,7 @@ void t_rs_generator::render_struct_sync_write(
   f_gen_
     << indent()
     << visibility_qualifier(struct_type)
-    << "fn write_to_out_protocol(&self, o_prot: &mut TOutputProtocol) -> thrift::Result<()> {"
+    << "fn write_to_out_protocol(&self, o_prot: &mut dyn TOutputProtocol) -> thrift::Result<()> {"
     << endl;
   indent_up();
 
@@ -1387,7 +1437,7 @@ void t_rs_generator::render_struct_sync_write(
 void t_rs_generator::render_union_sync_write(const string &union_name, t_struct *tstruct) {
   f_gen_
     << indent()
-    << "pub fn write_to_out_protocol(&self, o_prot: &mut TOutputProtocol) -> thrift::Result<()> {"
+    << "pub fn write_to_out_protocol(&self, o_prot: &mut dyn TOutputProtocol) -> thrift::Result<()> {"
     << endl;
   indent_up();
 
@@ -1543,7 +1593,7 @@ void t_rs_generator::render_list_sync_write(const string &list_var, bool list_va
   string ref(list_var_is_ref ? "" : "&");
   f_gen_ << indent() << "for e in " << ref << list_var << " {" << endl;
   indent_up();
-  render_type_sync_write(needs_deref_on_container_write(elem_type) ? "*e" : "e", true, elem_type);
+  render_type_sync_write(string_container_write_variable(elem_type, "e"), true, elem_type);
   f_gen_ << indent() << "o_prot.write_list_end()?;" << endl;
   indent_down();
   f_gen_ << indent() << "}" << endl;
@@ -1564,7 +1614,7 @@ void t_rs_generator::render_set_sync_write(const string &set_var, bool set_var_i
   string ref(set_var_is_ref ? "" : "&");
   f_gen_ << indent() << "for e in " << ref << set_var << " {" << endl;
   indent_up();
-  render_type_sync_write(needs_deref_on_container_write(elem_type) ? "*e" : "e", true, elem_type);
+  render_type_sync_write(string_container_write_variable(elem_type, "e"), true, elem_type);
   f_gen_ << indent() << "o_prot.write_set_end()?;" << endl;
   indent_down();
   f_gen_ << indent() << "}" << endl;
@@ -1587,11 +1637,28 @@ void t_rs_generator::render_map_sync_write(const string &map_var, bool map_var_i
   string ref(map_var_is_ref ? "" : "&");
   f_gen_ << indent() << "for (k, v) in " << ref << map_var << " {" << endl;
   indent_up();
-  render_type_sync_write(needs_deref_on_container_write(key_type) ? "*k" : "k", true, key_type);
-  render_type_sync_write(needs_deref_on_container_write(val_type) ? "*v" : "v", true, val_type);
+  render_type_sync_write(string_container_write_variable(key_type, "k"), true, key_type);
+  render_type_sync_write(string_container_write_variable(val_type, "v"), true, val_type);
   f_gen_ << indent() << "o_prot.write_map_end()?;" << endl;
   indent_down();
   f_gen_ << indent() << "}" << endl;
+}
+
+string t_rs_generator::string_container_write_variable(t_type* ttype, const string& base_var) {
+  bool type_needs_deref = needs_deref_on_container_write(ttype);
+  bool type_is_double = is_double(ttype);
+
+  string write_variable;
+
+  if (type_is_double && type_needs_deref) {
+    write_variable = "(*" + base_var + ")";
+  } else if (type_needs_deref) {
+    write_variable = "*" + base_var;
+  } else {
+    write_variable = base_var;
+  }
+
+  return write_variable;
 }
 
 bool t_rs_generator::needs_deref_on_container_write(t_type* ttype) {
@@ -1612,7 +1679,7 @@ void t_rs_generator::render_struct_sync_read(
   f_gen_
     << indent()
     << visibility_qualifier(struct_type)
-    << "fn read_from_in_protocol(i_prot: &mut TInputProtocol) -> thrift::Result<" << struct_name << "> {"
+    << "fn read_from_in_protocol(i_prot: &mut dyn TInputProtocol) -> thrift::Result<" << struct_name << "> {"
     << endl;
 
   indent_up();
@@ -1657,7 +1724,7 @@ void t_rs_generator::render_struct_sync_read(
 
   for (members_iter = members.begin(); members_iter != members.end(); ++members_iter) {
     t_field* tfield = (*members_iter);
-    f_gen_ << indent() << tfield->get_key() << " => {" << endl;
+    f_gen_ << indent() << rust_safe_field_id(tfield->get_key()) << " => {" << endl;
     indent_up();
     render_type_sync_read("val", tfield->get_type());
     f_gen_ << indent() << struct_field_read_temp_variable(tfield) << " = Some(val);" << endl;
@@ -1734,7 +1801,7 @@ void t_rs_generator::render_struct_sync_read(
 void t_rs_generator::render_union_sync_read(const string &union_name, t_struct *tstruct) {
   f_gen_
     << indent()
-    << "pub fn read_from_in_protocol(i_prot: &mut TInputProtocol) -> thrift::Result<" << union_name << "> {"
+    << "pub fn read_from_in_protocol(i_prot: &mut dyn TInputProtocol) -> thrift::Result<" << union_name << "> {"
     << endl;
   indent_up();
 
@@ -1767,7 +1834,7 @@ void t_rs_generator::render_union_sync_read(const string &union_name, t_struct *
   vector<t_field*>::const_iterator members_iter;
   for (members_iter = members.begin(); members_iter != members.end(); ++members_iter) {
     t_field* member = (*members_iter);
-    f_gen_ << indent() << member->get_key() << " => {" << endl;
+    f_gen_ << indent() << rust_safe_field_id(member->get_key()) << " => {" << endl;
     indent_up();
     render_type_sync_read("val", member->get_type());
     f_gen_ << indent() << "if ret.is_none() {" << endl;
@@ -1801,7 +1868,7 @@ void t_rs_generator::render_union_sync_read(const string &union_name, t_struct *
   // return the value or an error
   f_gen_ << indent() << "if received_field_count == 0 {" << endl;
   indent_up();
-  render_rift_error(
+  render_thrift_error(
     "Protocol",
     "ProtocolError",
     "ProtocolErrorKind::InvalidData",
@@ -1810,7 +1877,7 @@ void t_rs_generator::render_union_sync_read(const string &union_name, t_struct *
   indent_down();
   f_gen_ << indent() << "} else if received_field_count > 1 {" << endl;
   indent_up();
-  render_rift_error(
+  render_thrift_error(
     "Protocol",
     "ProtocolError",
     "ProtocolErrorKind::InvalidData",
@@ -1828,7 +1895,7 @@ void t_rs_generator::render_union_sync_read(const string &union_name, t_struct *
 }
 
 // Construct the rust representation of all supported types from the wire.
-void t_rs_generator::render_type_sync_read(const string &type_var, t_type *ttype) {
+void t_rs_generator::render_type_sync_read(const string &type_var, t_type *ttype, bool is_boxed) {
   if (ttype->is_base_type()) {
     t_base_type* tbase_type = (t_base_type*)ttype;
     switch (tbase_type->get_base()) {
@@ -1861,13 +1928,23 @@ void t_rs_generator::render_type_sync_read(const string &type_var, t_type *ttype
       return;
     }
   } else if (ttype->is_typedef()) {
+    // FIXME: not a fan of separate `is_boxed` parameter
+    // This is problematic because it's an optional parameter, and only comes
+    // into play once. The core issue is that I lose an important piece of type
+    // information (whether the type is a fwd ref) by unwrapping the typedef'd
+    // type and making the recursive call using it. I can't modify or wrap the
+    // generated string after the fact because it's written directly into the file,
+    // so I have to pass this parameter along. Going with this approach because it
+    // seems like the lowest-cost option to easily support recursive types.
     t_typedef* ttypedef = (t_typedef*)ttype;
-    render_type_sync_read(type_var, ttypedef->get_type());
+    render_type_sync_read(type_var, ttypedef->get_type(), ttypedef->is_forward_typedef());
     return;
   } else if (ttype->is_enum() || ttype->is_struct() || ttype->is_xception()) {
+    string read_call(to_rust_type(ttype) + "::read_from_in_protocol(i_prot)?");
+    read_call = is_boxed ? "Box::new(" + read_call + ")" : read_call;
     f_gen_
       << indent()
-      << "let " << type_var << " = " <<  to_rust_type(ttype) << "::read_from_in_protocol(i_prot)?;"
+      << "let " << type_var << " = " <<  read_call << ";"
       << endl;
     return;
   } else if (ttype->is_map()) {
@@ -1961,7 +2038,7 @@ void t_rs_generator::render_map_sync_read(t_map *tmap, const string &map_var) {
 
 string t_rs_generator::struct_field_read_temp_variable(t_field* tfield) {
   std::ostringstream foss;
-  foss << "f_" << tfield->get_key();
+  foss << "f_" << rust_safe_field_id(tfield->get_key());
   return foss.str();
 }
 
@@ -1991,9 +2068,9 @@ void t_rs_generator::render_service_call_structs(t_service* tservice) {
   // contains the exceptions as well
   for(func_iter = functions.begin(); func_iter != functions.end(); ++func_iter) {
     t_function* tfunc = (*func_iter);
-    render_struct(rust_struct_name(tfunc->get_arglist()), tfunc->get_arglist(), t_rs_generator::T_ARGS);
+    render_service_call_args_struct(tfunc);
     if (!tfunc->is_oneway()) {
-      render_result_value_struct(tfunc);
+      render_service_call_result_value_struct(tfunc);
     }
   }
 }
@@ -2026,7 +2103,7 @@ void t_rs_generator::render_sync_client_trait(t_service *tservice) {
   for(func_iter = functions.begin(); func_iter != functions.end(); ++func_iter) {
     t_function* tfunc = (*func_iter);
     string func_name = service_call_client_function_name(tfunc);
-    string func_args = rust_sync_service_call_declaration(tfunc);
+    string func_args = rust_sync_service_call_declaration(tfunc, true);
     string func_return = to_rust_type(tfunc->get_returntype());
     render_rustdoc((t_doc*) tfunc);
     f_gen_ << indent() << "fn " << func_name <<  func_args << " -> thrift::Result<" << func_return << ">;" << endl;
@@ -2045,8 +2122,14 @@ void t_rs_generator::render_sync_client_marker_trait(t_service *tservice) {
 void t_rs_generator::render_sync_client_marker_trait_impls(t_service *tservice, const string &impl_struct_name) {
   f_gen_
     << indent()
-    << "impl " << rust_namespace(tservice) << rust_sync_client_marker_trait_name(tservice)
-    << " for " << impl_struct_name
+    << "impl "
+    << SYNC_CLIENT_GENERIC_BOUND_VARS
+    << " "
+    << rust_namespace(tservice) << rust_sync_client_marker_trait_name(tservice)
+    << " for "
+    << impl_struct_name << SYNC_CLIENT_GENERIC_BOUND_VARS
+    << " "
+    << SYNC_CLIENT_GENERIC_BOUNDS
     << " {}"
     << endl;
 
@@ -2057,11 +2140,19 @@ void t_rs_generator::render_sync_client_marker_trait_impls(t_service *tservice, 
 }
 
 void t_rs_generator::render_sync_client_definition_and_impl(const string& client_impl_name) {
+
   // render the definition for the client struct
-  f_gen_ << "pub struct " << client_impl_name << " {" << endl;
+  f_gen_
+    << "pub struct "
+    << client_impl_name
+    << SYNC_CLIENT_GENERIC_BOUND_VARS
+    << " "
+    << SYNC_CLIENT_GENERIC_BOUNDS
+    << " {"
+    << endl;
   indent_up();
-  f_gen_ << indent() << "_i_prot: Box<TInputProtocol>," << endl;
-  f_gen_ << indent() << "_o_prot: Box<TOutputProtocol>," << endl;
+  f_gen_ << indent() << "_i_prot: IP," << endl;
+  f_gen_ << indent() << "_o_prot: OP," << endl;
   f_gen_ << indent() << "_sequence_number: i32," << endl;
   indent_down();
   f_gen_ << "}" << endl;
@@ -2069,7 +2160,16 @@ void t_rs_generator::render_sync_client_definition_and_impl(const string& client
 
   // render the struct implementation
   // this includes the new() function as well as the helper send/recv methods for each service call
-  f_gen_ << "impl " << client_impl_name << " {" << endl;
+  f_gen_
+    << "impl "
+    << SYNC_CLIENT_GENERIC_BOUND_VARS
+    << " "
+    << client_impl_name
+    << SYNC_CLIENT_GENERIC_BOUND_VARS
+    << " "
+    << SYNC_CLIENT_GENERIC_BOUNDS
+    << " {"
+    << endl;
   indent_up();
   render_sync_client_lifecycle_functions(client_impl_name);
   indent_down();
@@ -2080,8 +2180,9 @@ void t_rs_generator::render_sync_client_definition_and_impl(const string& client
 void t_rs_generator::render_sync_client_lifecycle_functions(const string& client_struct) {
   f_gen_
     << indent()
-    << "pub fn new(input_protocol: Box<TInputProtocol>, output_protocol: Box<TOutputProtocol>) -> "
+    << "pub fn new(input_protocol: IP, output_protocol: OP) -> "
     << client_struct
+    << SYNC_CLIENT_GENERIC_BOUND_VARS
     << " {"
     << endl;
   indent_up();
@@ -2097,11 +2198,20 @@ void t_rs_generator::render_sync_client_lifecycle_functions(const string& client
 }
 
 void t_rs_generator::render_sync_client_tthriftclient_impl(const string &client_impl_name) {
-  f_gen_ << indent() << "impl TThriftClient for " << client_impl_name << " {" << endl;
+  f_gen_
+    << indent()
+    << "impl "
+    << SYNC_CLIENT_GENERIC_BOUND_VARS
+    << " TThriftClient for "
+    << client_impl_name
+    << SYNC_CLIENT_GENERIC_BOUND_VARS
+    << " "
+    << SYNC_CLIENT_GENERIC_BOUNDS
+    << " {" << endl;
   indent_up();
 
-  f_gen_ << indent() << "fn i_prot_mut(&mut self) -> &mut TInputProtocol { &mut *self._i_prot }" << endl;
-  f_gen_ << indent() << "fn o_prot_mut(&mut self) -> &mut TOutputProtocol { &mut *self._o_prot }" << endl;
+  f_gen_ << indent() << "fn i_prot_mut(&mut self) -> &mut dyn TInputProtocol { &mut self._i_prot }" << endl;
+  f_gen_ << indent() << "fn o_prot_mut(&mut self) -> &mut dyn TOutputProtocol { &mut self._o_prot }" << endl;
   f_gen_ << indent() << "fn sequence_number(&self) -> i32 { self._sequence_number }" << endl;
   f_gen_
     << indent()
@@ -2148,7 +2258,7 @@ string t_rs_generator::sync_client_marker_traits_for_extension(t_service *tservi
 
 void t_rs_generator::render_sync_send_recv_wrapper(t_function* tfunc) {
   string func_name = service_call_client_function_name(tfunc);
-  string func_decl_args = rust_sync_service_call_declaration(tfunc);
+  string func_decl_args = rust_sync_service_call_declaration(tfunc, true);
   string func_call_args = rust_sync_service_call_invocation(tfunc);
   string func_return = to_rust_type(tfunc->get_returntype());
 
@@ -2205,7 +2315,7 @@ void t_rs_generator::render_sync_send(t_function* tfunc) {
   f_gen_
     << indent()
     << "let call_args = "
-    << rust_struct_name(tfunc->get_arglist())
+    << service_call_args_struct_name(tfunc)
     << " { "
     << struct_fields
     << " };"
@@ -2244,12 +2354,17 @@ void t_rs_generator::render_sync_recv(t_function* tfunc) {
   f_gen_ << indent() << "}" << endl;
 }
 
-string t_rs_generator::rust_sync_service_call_declaration(t_function* tfunc) {
+string t_rs_generator::rust_sync_service_call_declaration(t_function* tfunc, bool self_is_mutable) {
   ostringstream func_args;
-  func_args << "(&mut self";
+
+  if (self_is_mutable) {
+    func_args << "(&mut self";
+  } else {
+    func_args << "(&self";
+  }
 
   if (has_args(tfunc)) {
-    func_args << ", "; // put comma after "&mut self"
+    func_args << ", "; // put comma after "self"
     func_args << struct_to_declaration(tfunc->get_arglist(), T_ARGS);
   }
 
@@ -2314,7 +2429,12 @@ string t_rs_generator::struct_to_invocation(t_struct* tstruct, const string& fie
   return args.str();
 }
 
-void t_rs_generator::render_result_value_struct(t_function* tfunc) {
+void t_rs_generator::render_service_call_args_struct(t_function* tfunc) {
+    string args_struct_name(service_call_args_struct_name(tfunc));
+    render_struct(args_struct_name, tfunc->get_arglist(), t_rs_generator::T_ARGS);
+}
+
+void t_rs_generator::render_service_call_result_value_struct(t_function* tfunc) {
   string result_struct_name = service_call_result_struct_name(tfunc);
   t_struct result(program_, result_struct_name);
 
@@ -2364,7 +2484,7 @@ void t_rs_generator::render_sync_handler_trait(t_service *tservice) {
   for(func_iter = functions.begin(); func_iter != functions.end(); ++func_iter) {
     t_function* tfunc = (*func_iter);
     string func_name = service_call_handler_function_name(tfunc);
-    string func_args = rust_sync_service_call_declaration(tfunc);
+    string func_args = rust_sync_service_call_declaration(tfunc, false);
     string func_return = to_rust_type(tfunc->get_returntype());
     render_rustdoc((t_doc*) tfunc);
     f_gen_
@@ -2408,7 +2528,7 @@ void t_rs_generator::render_sync_processor_definition_and_impl(t_service *tservi
   indent_up();
   f_gen_ << indent() << service_processor_name << " {" << endl;
   indent_up();
-  f_gen_ << indent() << "handler: handler," << endl;
+  f_gen_ << indent() << "handler," << endl;
   indent_down();
   f_gen_ << indent() << "}" << endl;
   indent_down();
@@ -2448,16 +2568,18 @@ void t_rs_generator::render_sync_processor_definition_and_impl(t_service *tservi
 
   f_gen_
     << indent()
-    << "fn process(&mut self, i_prot: &mut TInputProtocol, o_prot: &mut TOutputProtocol) -> thrift::Result<()> {"
+    << "fn process(&self, i_prot: &mut dyn TInputProtocol, o_prot: &mut dyn TOutputProtocol) -> thrift::Result<()> {"
     << endl;
   indent_up();
+
   f_gen_ << indent() << "let message_ident = i_prot.read_message_begin()?;" << endl;
-  f_gen_ << indent() << "match &*message_ident.name {" << endl; // [sigh] explicit deref coercion
+
+  f_gen_ << indent() << "let res = match &*message_ident.name {" << endl; // [sigh] explicit deref coercion
   indent_up();
   render_process_match_statements(tservice);
   f_gen_ << indent() << "method => {" << endl;
   indent_up();
-  render_rift_error(
+  render_thrift_error(
     "Application",
     "ApplicationError",
     "ApplicationErrorKind::UnknownMethod",
@@ -2467,7 +2589,9 @@ void t_rs_generator::render_sync_processor_definition_and_impl(t_service *tservi
   f_gen_ << indent() << "}," << endl;
 
   indent_down();
-  f_gen_ << indent() << "}" << endl;
+  f_gen_ << indent() << "};" << endl;
+  f_gen_ << indent() << "thrift::server::handle_process_result(&message_ident, res, o_prot)" << endl;
+
   indent_down();
   f_gen_ << indent() << "}" << endl;
 
@@ -2487,10 +2611,10 @@ void t_rs_generator::render_sync_process_delegation_functions(t_service *tservic
     f_gen_
       << indent()
       << "fn " << function_name
-      << "(&mut self, "
+      << "(&self, "
       << "incoming_sequence_number: i32, "
-      << "i_prot: &mut TInputProtocol, "
-      << "o_prot: &mut TOutputProtocol) "
+      << "i_prot: &mut dyn TInputProtocol, "
+      << "o_prot: &mut dyn TOutputProtocol) "
       << "-> thrift::Result<()> {"
       << endl;
     indent_up();
@@ -2500,7 +2624,7 @@ void t_rs_generator::render_sync_process_delegation_functions(t_service *tservic
       << actual_processor
       << "::" << function_name
       << "("
-      << "&mut self.handler, "
+      << "&self.handler, "
       << "incoming_sequence_number, "
       << "i_prot, "
       << "o_prot"
@@ -2552,10 +2676,10 @@ void t_rs_generator::render_sync_process_function(t_function *tfunc, const strin
     << indent()
     << "pub fn process_" << rust_snake_case(tfunc->get_name())
     << "<H: " << handler_type << ">"
-    << "(handler: &mut H, "
+    << "(handler: &H, "
     << sequence_number_param << ": i32, "
-    << "i_prot: &mut TInputProtocol, "
-    << output_protocol_param << ": &mut TOutputProtocol) "
+    << "i_prot: &mut dyn TInputProtocol, "
+    << output_protocol_param << ": &mut dyn TOutputProtocol) "
     << "-> thrift::Result<()> {"
     << endl;
 
@@ -2567,7 +2691,7 @@ void t_rs_generator::render_sync_process_function(t_function *tfunc, const strin
     << "let "
     << (has_non_void_args(tfunc) ? "args" : "_")
     << " = "
-    << rust_struct_name(tfunc->get_arglist())
+    << service_call_args_struct_name(tfunc)
     << "::read_from_in_protocol(i_prot)?;"
     << endl;
 
@@ -2734,7 +2858,7 @@ void t_rs_generator::render_sync_handler_failed_user_exception_branch(t_function
 
   f_gen_ << indent() << "let ret_err = {" << endl;
   indent_up();
-  render_rift_error_struct("ApplicationError", "ApplicationErrorKind::Unknown", "usr_err.description()");
+  render_thrift_error_struct("ApplicationError", "ApplicationErrorKind::Unknown", "usr_err.description()");
   indent_down();
   f_gen_ << indent() << "};" << endl;
   render_sync_handler_send_exception_response(tfunc, "ret_err");
@@ -2757,7 +2881,7 @@ void t_rs_generator::render_sync_handler_failed_application_exception_branch(
 void t_rs_generator::render_sync_handler_failed_default_exception_branch(t_function *tfunc) {
   f_gen_ << indent() << "let ret_err = {" << endl;
   indent_up();
-  render_rift_error_struct("ApplicationError", "ApplicationErrorKind::Unknown", "e.description()");
+  render_thrift_error_struct("ApplicationError", "ApplicationErrorKind::Unknown", "e.description()");
   indent_down();
   f_gen_ << indent() << "};" << endl;
   if (tfunc->is_oneway()) {
@@ -2831,10 +2955,10 @@ void t_rs_generator::render_rustdoc(t_doc* tdoc) {
     return;
   }
 
-  generate_docstring_comment(f_gen_, "", "///", tdoc->get_doc(), "");
+  generate_docstring_comment(f_gen_, "", "/// ", tdoc->get_doc(), "");
 }
 
-void t_rs_generator::render_rift_error(
+void t_rs_generator::render_thrift_error(
   const string& error_kind,
   const string& error_struct,
   const string& sub_error_kind,
@@ -2844,14 +2968,14 @@ void t_rs_generator::render_rift_error(
   indent_up();
   f_gen_ << indent() << "thrift::Error::" << error_kind << "(" << endl;
   indent_up();
-  render_rift_error_struct(error_struct, sub_error_kind, error_message);
+  render_thrift_error_struct(error_struct, sub_error_kind, error_message);
   indent_down();
   f_gen_ << indent() << ")" << endl;
   indent_down();
   f_gen_ << indent() << ")" << endl;
 }
 
-void t_rs_generator::render_rift_error_struct(
+void t_rs_generator::render_thrift_error_struct(
   const string& error_struct,
   const string& sub_error_kind,
   const string& error_message
@@ -2862,6 +2986,18 @@ void t_rs_generator::render_rift_error_struct(
   f_gen_ << indent() << error_message << endl;
   indent_down();
   f_gen_ << indent() << ")" << endl;
+}
+
+bool t_rs_generator::is_double(t_type* ttype) {
+  ttype = get_true_type(ttype);
+  if (ttype->is_base_type()) {
+    t_base_type::t_base tbase = ((t_base_type*)ttype)->get_base();
+    if (tbase == t_base_type::TYPE_DOUBLE) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 string t_rs_generator::to_rust_type(t_type* ttype, bool ordered_float) {
@@ -2895,9 +3031,12 @@ string t_rs_generator::to_rust_type(t_type* ttype, bool ordered_float) {
       }
     }
   } else if (ttype->is_typedef()) {
-    return rust_namespace(ttype) + ((t_typedef*)ttype)->get_symbolic();
+    t_typedef* ttypedef = (t_typedef*)ttype;
+    string rust_type = rust_namespace(ttype) + ttypedef->get_symbolic();
+    rust_type =  ttypedef->is_forward_typedef() ? "Box<" + rust_type + ">" : rust_type;
+    return rust_type;
   } else if (ttype->is_enum()) {
-    return rust_namespace(ttype) + ttype->get_name();
+    return rust_namespace(ttype) + rust_camel_case(ttype->get_name());
   } else if (ttype->is_struct() || ttype->is_xception()) {
     return rust_namespace(ttype) + rust_camel_case(ttype->get_name());
   } else if (ttype->is_map()) {
@@ -2912,6 +3051,21 @@ string t_rs_generator::to_rust_type(t_type* ttype, bool ordered_float) {
   }
 
   throw "cannot find rust type for " + ttype->get_name();
+}
+
+string t_rs_generator::to_rust_const_type(t_type* ttype, bool ordered_float) {
+  if (ttype->is_base_type()) {
+    t_base_type* tbase_type = ((t_base_type*)ttype);
+    if (tbase_type->get_base() == t_base_type::TYPE_STRING) {
+      if (tbase_type->is_binary()) {
+        return "&[u8]";
+      } else {
+        return "&str";
+      }
+    }
+  }
+
+  return to_rust_type(ttype, ordered_float);
 }
 
 string t_rs_generator::to_rust_field_type_enum(t_type* ttype) {
@@ -3096,8 +3250,13 @@ string t_rs_generator::service_call_handler_function_name(t_function* tfunc) {
   return "handle_" + rust_snake_case(tfunc->get_name());
 }
 
+string t_rs_generator::service_call_args_struct_name(t_function* tfunc) {
+  // Thrift automatically appends `Args` to the arglist name. No need to do it here.
+  return rust_camel_case(service_name_) + rust_camel_case(tfunc->get_arglist()->get_name());
+}
+
 string t_rs_generator::service_call_result_struct_name(t_function* tfunc) {
-  return rust_camel_case(tfunc->get_name()) + RESULT_STRUCT_SUFFIX;
+  return rust_camel_case(service_name_) + rust_camel_case(tfunc->get_name()) + RESULT_STRUCT_SUFFIX;
 }
 
 string t_rs_generator::rust_sync_client_marker_trait_name(t_service* tservice) {
@@ -3124,6 +3283,23 @@ string t_rs_generator::rust_sync_processor_impl_name(t_service *tservice) {
   return "T" + rust_camel_case(tservice->get_name()) + "ProcessFunctions";
 }
 
+string t_rs_generator::rust_enum_variant_name(const string &name) {
+  bool all_uppercase = true;
+
+  for (char i : name) {
+    if (isalnum(i) && islower(i)) {
+      all_uppercase = false;
+      break;
+    }
+  }
+
+  if (all_uppercase) {
+    return capitalize(camelcase(lowercase(name)));
+  } else {
+    return capitalize(camelcase(name));
+  }
+}
+
 string t_rs_generator::rust_upper_case(const string& name) {
   string str(uppercase(underscore(name)));
   string_replace(str, "__", "_");
@@ -3140,6 +3316,17 @@ string t_rs_generator::rust_camel_case(const string& name) {
   string str(capitalize(camelcase(name)));
   string_replace(str, "_", "");
   return str;
+}
+
+string t_rs_generator::rust_safe_field_id(int32_t id) {
+    string id_str = std::to_string(abs(id));
+    if (id >= 0) {
+        return id_str;
+    } else {
+        string str("neg");
+        str += id_str;
+        return str;
+    }
 }
 
 void t_rs_generator::string_replace(string& target, const string& search_string, const string& replace_string) {

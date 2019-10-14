@@ -22,7 +22,7 @@
 import sys
 try:
     from setuptools import setup, Extension
-except:
+except Exception:
     from distutils.core import setup, Extension
 
 from distutils.command.build_ext import build_ext
@@ -31,7 +31,10 @@ from distutils.errors import CCompilerError, DistutilsExecError, DistutilsPlatfo
 # Fix to build sdist under vagrant
 import os
 if 'vagrant' in str(os.environ):
-    del os.link
+    try:
+        del os.link
+    except AttributeError:
+        pass
 
 include_dirs = ['src']
 if sys.platform == 'win32':
@@ -87,9 +90,9 @@ def run_setup(with_binary):
     twisted_deps = ['twisted']
 
     setup(name='thrift',
-          version='1.0.0-dev',
+          version='0.13.0',
           description='Python bindings for the Apache Thrift RPC system',
-          author='Thrift Developers',
+          author='Apache Thrift Developers',
           author_email='dev@thrift.apache.org',
           url='http://thrift.apache.org',
           license='Apache License 2.0',
@@ -120,6 +123,7 @@ def run_setup(with_binary):
           zip_safe=False,
           **extensions
           )
+
 
 try:
     with_binary = True

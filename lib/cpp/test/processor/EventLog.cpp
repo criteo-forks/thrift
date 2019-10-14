@@ -21,7 +21,6 @@
 #include <stdarg.h>
 #include <stdlib.h>
 
-using namespace std;
 using namespace apache::thrift::concurrency;
 
 namespace {
@@ -82,7 +81,7 @@ EventLog::EventLog() {
 void EventLog::append(EventType type,
                       uint32_t connectionId,
                       uint32_t callId,
-                      const string& message) {
+                      const std::string& message) {
   Synchronized s(monitor_);
   debug("%d <-- %u, %u, %s \"%s\"", id_, connectionId, callId, type, message.c_str());
 
@@ -99,7 +98,7 @@ Event EventLog::waitForEvent(int64_t timeout) {
     while (events_.empty()) {
       monitor_.wait(timeout);
     }
-  } catch (TimedOutException ex) {
+  } catch (const TimedOutException &) {
     return Event(ET_LOG_END, 0, 0, "");
   }
 
@@ -111,7 +110,7 @@ Event EventLog::waitForEvent(int64_t timeout) {
 Event EventLog::waitForConnEvent(uint32_t connId, int64_t timeout) {
   Synchronized s(monitor_);
 
-  EventList::iterator it = events_.begin();
+  auto it = events_.begin();
   while (true) {
     try {
       // TODO: it would be nicer to honor timeout for the duration of this
@@ -120,7 +119,7 @@ Event EventLog::waitForConnEvent(uint32_t connId, int64_t timeout) {
       while (it == events_.end()) {
         monitor_.wait(timeout);
       }
-    } catch (TimedOutException ex) {
+    } catch (const TimedOutException &) {
       return Event(ET_LOG_END, 0, 0, "");
     }
 

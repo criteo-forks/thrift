@@ -49,29 +49,29 @@ public:
 
   t_base get_base() const { return base_; }
 
-  bool is_void() const { return base_ == TYPE_VOID; }
+  bool is_void() const override { return base_ == TYPE_VOID; }
 
-  bool is_string() const { return base_ == TYPE_STRING; }
+  bool is_string() const override { return base_ == TYPE_STRING; }
 
-  bool is_bool() const { return base_ == TYPE_BOOL; }
+  bool is_bool() const override { return base_ == TYPE_BOOL; }
 
   void set_string_list(bool val) { string_list_ = val; }
 
-  bool is_string_list() const { return (base_ == TYPE_STRING) && string_list_; }
+  bool is_string_list() const { return string_list_ && (base_ == TYPE_STRING); }
 
   void set_binary(bool val) { binary_ = val; }
 
-  bool is_binary() const { return (base_ == TYPE_STRING) && binary_; }
+  bool is_binary() const override { return binary_ && (base_ == TYPE_STRING); }
 
   void set_string_enum(bool val) { string_enum_ = val; }
 
-  bool is_string_enum() const { return base_ == TYPE_STRING && string_enum_; }
+  bool is_string_enum() const { return string_enum_ && base_ == TYPE_STRING; }
 
   void add_string_enum_val(std::string val) { string_enum_vals_.push_back(val); }
 
   const std::vector<std::string>& get_string_enum_vals() const { return string_enum_vals_; }
 
-  bool is_base_type() const { return true; }
+  bool is_base_type() const override { return true; }
 
   static std::string t_base_name(t_base tbase) {
     switch (tbase) {

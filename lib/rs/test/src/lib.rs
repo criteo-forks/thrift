@@ -15,14 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-extern crate ordered_float;
 extern crate thrift;
-extern crate try_from;
 
 pub mod base_one;
 pub mod base_two;
 pub mod midlayer;
 pub mod ultimate;
+pub mod recursive;
 
 #[cfg(test)]
 mod tests {
@@ -48,6 +47,9 @@ mod tests {
 
     #[test]
     fn must_be_able_to_use_defaults() {
-        let _ = midlayer::Meal { noodle: Some(base_one::Noodle::default()), ..Default::default() };
+        let _ = midlayer::Meal {
+            noodle: Some(base_one::Noodle::default()),
+            ..Default::default()
+        };
     }
 }

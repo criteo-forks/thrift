@@ -17,16 +17,33 @@
 # under the License.
 #
 
-use ExtUtils::MakeMaker;
-WriteMakefile( NAME => 'Thrift',
-               VERSION_FROM => 'lib/Thrift.pm',
-               MIN_PERL_VERSION => '5.006',
-               PREREQ_PM => {
-                   'Bit::Vector' => 0,
-                   'Class::Accessor' => 0,
-                   'IO::Socket::INET' => 0
-               },
-               ($] >= 5.006 ?
- (                AUTHOR => 'Apache Thrift <dev@thrift.apache.org>') : ()),
-               );
+use 5.10.0;
+use strict;
+use warnings;
 
+use ExtUtils::MakeMaker;
+
+WriteMakefile( ABSTRACT => 'Apache Thrift is a software framework for scalable cross-language services development.',
+               AUTHOR => 'Apache Thrift <dev@thrift.apache.org>',
+               LICENSE => 'apache_2_0',
+               MIN_PERL_VERSION => '5.010000',
+               NAME => 'Thrift',
+               NEEDS_LINKING => 0,
+               PREREQ_PM => {
+                   'Bit::Vector'     => 0,
+                   'Class::Accessor' => 0
+               },
+#              SIGN => 1,
+               VERSION_FROM => 'lib/Thrift.pm' );
+
+# THRIFT-4691
+package MY; # so that "SUPER" works right
+sub test {
+    # Adds gen-perl and gen-perl2 to the test execution as include paths
+    # Could not find anything in MakeMaker that would do this...
+    my @result;
+    for (@result = shift->SUPER::test(@_)) {
+        s/\$\(TEST_FILES\)/-Igen-perl -Igen-perl2 \$(TEST_FILES)/ig;
+    }
+    @result;
+}

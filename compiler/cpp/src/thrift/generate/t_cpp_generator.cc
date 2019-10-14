@@ -24,7 +24,9 @@
 #include <cassert>
 
 #include <fstream>
+#include <iomanip>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -64,6 +66,9 @@ public:
     gen_templates_ = false;
     gen_templates_only_ = false;
     gen_moveable_ = false;
+    gen_no_ostream_operators_ = false;
+    gen_no_skeleton_ = false;
+
     for( iter = parsed_options.begin(); iter != parsed_options.end(); ++iter) {
       if( iter->first.compare("pure_enums") == 0) {
         gen_pure_enums_ = true;
@@ -80,6 +85,10 @@ public:
         gen_templates_only_ = (iter->second == "only");
       } else if( iter->first.compare("moveable_types") == 0) {
         gen_moveable_ = true;
+      } else if ( iter->first.compare("no_ostream_operators") == 0) {
+        gen_no_ostream_operators_ = true;
+      } else if ( iter->first.compare("no_skeleton") == 0) {
+        gen_no_skeleton_ = true;
       } else {
         throw "unknown option cpp:" + iter->first;
       }
@@ -92,31 +101,35 @@ public:
    * Init and close methods
    */
 
-  void init_generator();
-  void close_generator();
+  void init_generator() override;
+  void close_generator() override;
 
-  void generate_consts(std::vector<t_const*> consts);
+  void generate_consts(std::vector<t_const*> consts) override;
 
   /**
    * Program-level generation functions
    */
 
-  void generate_typedef(t_typedef* ttypedef);
-  void generate_enum(t_enum* tenum);
-  void generate_forward_declaration(t_struct* tstruct);
-  void generate_struct(t_struct* tstruct) { generate_cpp_struct(tstruct, false); }
-  void generate_xception(t_struct* txception) { generate_cpp_struct(txception, true); }
+  void generate_typedef(t_typedef* ttypedef) override;
+  void generate_enum(t_enum* tenum) override;
+  void generate_enum_ostream_operator_decl(std::ostream& out, t_enum* tenum);
+  void generate_enum_ostream_operator(std::ostream& out, t_enum* tenum);
+  void generate_enum_to_string_helper_function_decl(std::ostream& out, t_enum* tenum);
+  void generate_enum_to_string_helper_function(std::ostream& out, t_enum* tenum);
+  void generate_forward_declaration(t_struct* tstruct) override;
+  void generate_struct(t_struct* tstruct) override { generate_cpp_struct(tstruct, false); }
+  void generate_xception(t_struct* txception) override { generate_cpp_struct(txception, true); }
   void generate_cpp_struct(t_struct* tstruct, bool is_exception);
 
-  void generate_service(t_service* tservice);
+  void generate_service(t_service* tservice) override;
 
-  void print_const_value(std::ofstream& out, std::string name, t_type* type, t_const_value* value);
-  std::string render_const_value(std::ofstream& out,
+  void print_const_value(std::ostream& out, std::string name, t_type* type, t_const_value* value);
+  std::string render_const_value(std::ostream& out,
                                  std::string name,
                                  t_type* type,
                                  t_const_value* value);
 
-  void generate_struct_declaration(std::ofstream& out,
+  void generate_struct_declaration(std::ostream& out,
                                    t_struct* tstruct,
                                    bool is_exception = false,
                                    bool pointers = false,
@@ -124,25 +137,26 @@ public:
                                    bool write = true,
                                    bool swap = false,
                                    bool is_user_struct = false);
-  void generate_struct_definition(std::ofstream& out,
-                                  std::ofstream& force_cpp_out,
+  void generate_struct_definition(std::ostream& out,
+                                  std::ostream& force_cpp_out,
                                   t_struct* tstruct,
-                                  bool setters = true);
-  void generate_copy_constructor(std::ofstream& out, t_struct* tstruct, bool is_exception);
-  void generate_move_constructor(std::ofstream& out, t_struct* tstruct, bool is_exception);
-  void generate_constructor_helper(std::ofstream& out,
+                                  bool setters = true,
+                                  bool is_user_struct = false);
+  void generate_copy_constructor(std::ostream& out, t_struct* tstruct, bool is_exception);
+  void generate_move_constructor(std::ostream& out, t_struct* tstruct, bool is_exception);
+  void generate_constructor_helper(std::ostream& out,
                                    t_struct* tstruct,
                                    bool is_excpetion,
                                    bool is_move);
-  void generate_assignment_operator(std::ofstream& out, t_struct* tstruct);
-  void generate_move_assignment_operator(std::ofstream& out, t_struct* tstruct);
-  void generate_assignment_helper(std::ofstream& out, t_struct* tstruct, bool is_move);
-  void generate_struct_reader(std::ofstream& out, t_struct* tstruct, bool pointers = false);
-  void generate_struct_writer(std::ofstream& out, t_struct* tstruct, bool pointers = false);
-  void generate_struct_result_writer(std::ofstream& out, t_struct* tstruct, bool pointers = false);
-  void generate_struct_swap(std::ofstream& out, t_struct* tstruct);
-  void generate_struct_print_method(std::ofstream& out, t_struct* tstruct);
-  void generate_exception_what_method(std::ofstream& out, t_struct* tstruct);
+  void generate_assignment_operator(std::ostream& out, t_struct* tstruct);
+  void generate_move_assignment_operator(std::ostream& out, t_struct* tstruct);
+  void generate_assignment_helper(std::ostream& out, t_struct* tstruct, bool is_move);
+  void generate_struct_reader(std::ostream& out, t_struct* tstruct, bool pointers = false);
+  void generate_struct_writer(std::ostream& out, t_struct* tstruct, bool pointers = false);
+  void generate_struct_result_writer(std::ostream& out, t_struct* tstruct, bool pointers = false);
+  void generate_struct_swap(std::ostream& out, t_struct* tstruct);
+  void generate_struct_print_method(std::ostream& out, t_struct* tstruct);
+  void generate_exception_what_method(std::ostream& out, t_struct* tstruct);
 
   /**
    * Service-level generation functions
@@ -167,45 +181,45 @@ public:
    * Serialization constructs
    */
 
-  void generate_deserialize_field(std::ofstream& out,
+  void generate_deserialize_field(std::ostream& out,
                                   t_field* tfield,
                                   std::string prefix = "",
                                   std::string suffix = "");
 
-  void generate_deserialize_struct(std::ofstream& out,
+  void generate_deserialize_struct(std::ostream& out,
                                    t_struct* tstruct,
                                    std::string prefix = "",
                                    bool pointer = false);
 
-  void generate_deserialize_container(std::ofstream& out, t_type* ttype, std::string prefix = "");
+  void generate_deserialize_container(std::ostream& out, t_type* ttype, std::string prefix = "");
 
-  void generate_deserialize_set_element(std::ofstream& out, t_set* tset, std::string prefix = "");
+  void generate_deserialize_set_element(std::ostream& out, t_set* tset, std::string prefix = "");
 
-  void generate_deserialize_map_element(std::ofstream& out, t_map* tmap, std::string prefix = "");
+  void generate_deserialize_map_element(std::ostream& out, t_map* tmap, std::string prefix = "");
 
-  void generate_deserialize_list_element(std::ofstream& out,
+  void generate_deserialize_list_element(std::ostream& out,
                                          t_list* tlist,
                                          std::string prefix,
                                          bool push_back,
                                          std::string index);
 
-  void generate_serialize_field(std::ofstream& out,
+  void generate_serialize_field(std::ostream& out,
                                 t_field* tfield,
                                 std::string prefix = "",
                                 std::string suffix = "");
 
-  void generate_serialize_struct(std::ofstream& out,
+  void generate_serialize_struct(std::ostream& out,
                                  t_struct* tstruct,
                                  std::string prefix = "",
                                  bool pointer = false);
 
-  void generate_serialize_container(std::ofstream& out, t_type* ttype, std::string prefix = "");
+  void generate_serialize_container(std::ostream& out, t_type* ttype, std::string prefix = "");
 
-  void generate_serialize_map_element(std::ofstream& out, t_map* tmap, std::string iter);
+  void generate_serialize_map_element(std::ostream& out, t_map* tmap, std::string iter);
 
-  void generate_serialize_set_element(std::ofstream& out, t_set* tmap, std::string iter);
+  void generate_serialize_set_element(std::ostream& out, t_set* tmap, std::string iter);
 
-  void generate_serialize_list_element(std::ofstream& out, t_list* tlist, std::string iter);
+  void generate_serialize_list_element(std::ostream& out, t_list* tlist, std::string iter);
 
   void generate_function_call(ostream& out,
                               t_function* tfunction,
@@ -236,15 +250,16 @@ public:
   std::string argument_list(t_struct* tstruct, bool name_params = true, bool start_comma = false);
   std::string type_to_enum(t_type* ttype);
 
-  void generate_enum_constant_list(std::ofstream& f,
+  void generate_enum_constant_list(std::ostream& f,
                                    const vector<t_enum_value*>& constants,
                                    const char* prefix,
                                    const char* suffix,
                                    bool include_values);
 
-  void generate_struct_ostream_operator(std::ofstream& f, t_struct* tstruct);
-  void generate_struct_print_method_decl(std::ofstream& f, t_struct* tstruct);
-  void generate_exception_what_method_decl(std::ofstream& f,
+  void generate_struct_ostream_operator_decl(std::ostream& f, t_struct* tstruct);
+  void generate_struct_ostream_operator(std::ostream& f, t_struct* tstruct);
+  void generate_struct_print_method_decl(std::ostream& f, t_struct* tstruct);
+  void generate_exception_what_method_decl(std::ostream& f,
                                            t_struct* tstruct,
                                            bool external = false);
 
@@ -259,6 +274,22 @@ public:
   }
 
   void set_use_include_prefix(bool use_include_prefix) { use_include_prefix_ = use_include_prefix; }
+
+  /**
+   * The compiler option "no_thrift_ostream_impl" can be used to prevent
+   * the compiler from emitting implementations for operator <<.  In this
+   * case the consuming application must provide any needed to build.
+   *
+   * To disable this on a per structure bases, one can alternatively set
+   * the annotation "cpp.customostream" to prevent thrift from emitting an
+   * operator << (std::ostream&).
+   *
+   * See AnnotationTest for validation of this annotation feature.
+   */
+  bool has_custom_ostream(t_type* ttype) const {
+    return (gen_no_ostream_operators_) ||
+           (ttype->annotations_.find("cpp.customostream") != ttype->annotations_.end());
+  }
 
 private:
   /**
@@ -289,6 +320,11 @@ private:
   bool gen_moveable_;
 
   /**
+   * True if we should generate ostream definitions
+   */
+  bool gen_no_ostream_operators_;
+
+  /**
    * True iff we should use a path prefix in our #include statements for other
    * thrift-generated header files.
    */
@@ -309,6 +345,11 @@ private:
    */
   bool gen_no_default_operators_;
 
+   /**
+   * True if we should generate skeleton.
+   */
+  bool gen_no_skeleton_;
+
   /**
    * Strings for namespace, computed once up front then used directly
    */
@@ -321,12 +362,12 @@ private:
    * function.
    */
 
-  std::ofstream f_types_;
-  std::ofstream f_types_impl_;
-  std::ofstream f_types_tcc_;
-  std::ofstream f_header_;
-  std::ofstream f_service_;
-  std::ofstream f_service_tcc_;
+  ofstream_with_content_based_conditional_update f_types_;
+  ofstream_with_content_based_conditional_update f_types_impl_;
+  ofstream_with_content_based_conditional_update f_types_tcc_;
+  ofstream_with_content_based_conditional_update f_header_;
+  ofstream_with_content_based_conditional_update f_service_;
+  ofstream_with_content_based_conditional_update f_service_tcc_;
 
   // The ProcessorGenerator is used to generate parts of the code,
   // so it needs access to many of our protected members and methods.
@@ -347,7 +388,7 @@ void t_cpp_generator::init_generator() {
 
   // Make output file
   string f_types_name = get_out_dir() + program_name_ + "_types.h";
-  f_types_.open(f_types_name.c_str());
+  f_types_.open(f_types_name);
 
   string f_types_impl_name = get_out_dir() + program_name_ + "_types.cpp";
   f_types_impl_.open(f_types_impl_name.c_str());
@@ -380,28 +421,29 @@ void t_cpp_generator::init_generator() {
            << "#include <thrift/transport/TTransport.h>" << endl
            << endl;
   // Include C++xx compatibility header
-  f_types_ << "#include <thrift/cxxfunctional.h>" << endl;
+  f_types_ << "#include <functional>" << endl;
+  f_types_ << "#include <memory>" << endl;
 
   // Include other Thrift includes
   const vector<t_program*>& includes = program_->get_includes();
-  for (size_t i = 0; i < includes.size(); ++i) {
-    f_types_ << "#include \"" << get_include_prefix(*(includes[i])) << includes[i]->get_name()
+  for (auto include : includes) {
+    f_types_ << "#include \"" << get_include_prefix(*include) << include->get_name()
              << "_types.h\"" << endl;
 
     // XXX(simpkins): If gen_templates_ is enabled, we currently assume all
     // included files were also generated with templates enabled.
-    f_types_tcc_ << "#include \"" << get_include_prefix(*(includes[i])) << includes[i]->get_name()
+    f_types_tcc_ << "#include \"" << get_include_prefix(*include) << include->get_name()
                  << "_types.tcc\"" << endl;
   }
   f_types_ << endl;
 
   // Include custom headers
   const vector<string>& cpp_includes = program_->get_cpp_includes();
-  for (size_t i = 0; i < cpp_includes.size(); ++i) {
-    if (cpp_includes[i][0] == '<') {
-      f_types_ << "#include " << cpp_includes[i] << endl;
+  for (const auto & cpp_include : cpp_includes) {
+    if (cpp_include[0] == '<') {
+      f_types_ << "#include " << cpp_include << endl;
     } else {
-      f_types_ << "#include \"" << cpp_includes[i] << "\"" << endl;
+      f_types_ << "#include \"" << cpp_include << "\"" << endl;
     }
   }
   f_types_ << endl;
@@ -466,7 +508,7 @@ void t_cpp_generator::generate_typedef(t_typedef* ttypedef) {
            << ttypedef->get_symbolic() << ";" << endl << endl;
 }
 
-void t_cpp_generator::generate_enum_constant_list(std::ofstream& f,
+void t_cpp_generator::generate_enum_constant_list(std::ostream& f,
                                                   const vector<t_enum_value*>& constants,
                                                   const char* prefix,
                                                   const char* suffix,
@@ -541,6 +583,96 @@ void t_cpp_generator::generate_enum(t_enum* tenum) {
                 << tenum->get_name() << "Values"
                 << ", _k" << tenum->get_name() << "Names), "
                 << "::apache::thrift::TEnumIterator(-1, NULL, NULL));" << endl << endl;
+
+  generate_enum_ostream_operator_decl(f_types_, tenum);
+  generate_enum_ostream_operator(f_types_impl_, tenum);
+
+  generate_enum_to_string_helper_function_decl(f_types_, tenum);
+  generate_enum_to_string_helper_function(f_types_impl_, tenum);
+}
+
+void t_cpp_generator::generate_enum_ostream_operator_decl(std::ostream& out, t_enum* tenum) {
+
+  out << "std::ostream& operator<<(std::ostream& out, const ";
+  if (gen_pure_enums_) {
+    out << tenum->get_name();
+  } else {
+    out << tenum->get_name() << "::type&";
+  }
+  out << " val);" << endl;
+  out << endl;
+}
+
+void t_cpp_generator::generate_enum_ostream_operator(std::ostream& out, t_enum* tenum) {
+
+  // If we've been told the consuming application will provide an ostream
+  // operator definition then we only make a declaration:
+
+  if (!has_custom_ostream(tenum)) {
+    out << "std::ostream& operator<<(std::ostream& out, const ";
+    if (gen_pure_enums_) {
+      out << tenum->get_name();
+    } else {
+      out << tenum->get_name() << "::type&";
+    }
+    out << " val) ";
+    scope_up(out);
+
+    out << indent() << "std::map<int, const char*>::const_iterator it = _"
+             << tenum->get_name() << "_VALUES_TO_NAMES.find(val);" << endl;
+    out << indent() << "if (it != _" << tenum->get_name() << "_VALUES_TO_NAMES.end()) {" << endl;
+    indent_up();
+    out << indent() << "out << it->second;" << endl;
+    indent_down();
+    out << indent() << "} else {" << endl;
+    indent_up();
+    out << indent() << "out << static_cast<int>(val);" << endl;
+    indent_down();
+    out << indent() << "}" << endl;
+
+    out << indent() << "return out;" << endl;
+    scope_down(out);
+    out << endl;
+  }
+}
+
+void t_cpp_generator::generate_enum_to_string_helper_function_decl(std::ostream& out, t_enum* tenum) {
+  out << "std::string to_string(const ";
+  if (gen_pure_enums_) {
+    out << tenum->get_name();
+  } else {
+    out << tenum->get_name() << "::type&";
+  }
+  out << " val);" << endl;
+  out << endl;
+}
+
+void t_cpp_generator::generate_enum_to_string_helper_function(std::ostream& out, t_enum* tenum) {
+  if (!has_custom_ostream(tenum)) {
+    out << "std::string to_string(const ";
+    if (gen_pure_enums_) {
+      out << tenum->get_name();
+    } else {
+      out << tenum->get_name() << "::type&";
+    }
+    out << " val) " ;
+	scope_up(out);
+
+    out << indent() << "std::map<int, const char*>::const_iterator it = _"
+             << tenum->get_name() << "_VALUES_TO_NAMES.find(val);" << endl;
+    out << indent() << "if (it != _" << tenum->get_name() << "_VALUES_TO_NAMES.end()) {" << endl;
+    indent_up();
+    out << indent() << "return std::string(it->second);" << endl;
+    indent_down();
+    out << indent() << "} else {" << endl;
+    indent_up();
+    out << indent() << "return std::to_string(static_cast<int>(val));" << endl;
+    indent_down();
+    out << indent() << "}" << endl;
+
+    scope_down(out);
+    out << endl;
+  }
 }
 
 /**
@@ -548,12 +680,12 @@ void t_cpp_generator::generate_enum(t_enum* tenum) {
  */
 void t_cpp_generator::generate_consts(std::vector<t_const*> consts) {
   string f_consts_name = get_out_dir() + program_name_ + "_constants.h";
-  ofstream f_consts;
-  f_consts.open(f_consts_name.c_str());
+  ofstream_with_content_based_conditional_update f_consts;
+  f_consts.open(f_consts_name);
 
   string f_consts_impl_name = get_out_dir() + program_name_ + "_constants.cpp";
-  ofstream f_consts_impl;
-  f_consts_impl.open(f_consts_impl_name.c_str());
+  ofstream_with_content_based_conditional_update f_consts_impl;
+  f_consts_impl.open(f_consts_impl_name);
 
   // Print header
   f_consts << autogen_comment();
@@ -597,6 +729,7 @@ void t_cpp_generator::generate_consts(std::vector<t_const*> consts) {
   f_consts.close();
 
   f_consts_impl << endl << ns_close_ << endl << endl;
+  f_consts_impl.close();
 }
 
 /**
@@ -604,7 +737,7 @@ void t_cpp_generator::generate_consts(std::vector<t_const*> consts) {
  * is NOT performed in this function as it is always run beforehand using the
  * validate_types method in main.cc
  */
-void t_cpp_generator::print_const_value(ofstream& out,
+void t_cpp_generator::print_const_value(ostream& out,
                                         string name,
                                         t_type* type,
                                         t_const_value* value) {
@@ -618,8 +751,8 @@ void t_cpp_generator::print_const_value(ofstream& out,
   } else if (type->is_struct() || type->is_xception()) {
     const vector<t_field*>& fields = ((t_struct*)type)->get_members();
     vector<t_field*>::const_iterator f_iter;
-    const map<t_const_value*, t_const_value*>& val = value->get_map();
-    map<t_const_value*, t_const_value*>::const_iterator v_iter;
+    const map<t_const_value*, t_const_value*, t_const_value::value_compare>& val = value->get_map();
+    map<t_const_value*, t_const_value*, t_const_value::value_compare>::const_iterator v_iter;
     bool is_nonrequired_field = false;
     for (v_iter = val.begin(); v_iter != val.end(); ++v_iter) {
       t_type* field_type = NULL;
@@ -643,8 +776,8 @@ void t_cpp_generator::print_const_value(ofstream& out,
   } else if (type->is_map()) {
     t_type* ktype = ((t_map*)type)->get_key_type();
     t_type* vtype = ((t_map*)type)->get_val_type();
-    const map<t_const_value*, t_const_value*>& val = value->get_map();
-    map<t_const_value*, t_const_value*>::const_iterator v_iter;
+    const map<t_const_value*, t_const_value*, t_const_value::value_compare>& val = value->get_map();
+    map<t_const_value*, t_const_value*, t_const_value::value_compare>::const_iterator v_iter;
     for (v_iter = val.begin(); v_iter != val.end(); ++v_iter) {
       string key = render_const_value(out, name, ktype, v_iter->first);
       string val = render_const_value(out, name, vtype, v_iter->second);
@@ -677,7 +810,7 @@ void t_cpp_generator::print_const_value(ofstream& out,
 /**
  *
  */
-string t_cpp_generator::render_const_value(ofstream& out,
+string t_cpp_generator::render_const_value(ostream& out,
                                            string name,
                                            t_type* type,
                                            t_const_value* value) {
@@ -703,9 +836,9 @@ string t_cpp_generator::render_const_value(ofstream& out,
       break;
     case t_base_type::TYPE_DOUBLE:
       if (value->get_type() == t_const_value::CV_INTEGER) {
-        render << value->get_integer();
+        render << "static_cast<double>(" << value->get_integer() << ")";
       } else {
-        render << value->get_double();
+        render << emit_double_as_string(value->get_double());
       }
       break;
     default:
@@ -737,9 +870,9 @@ void t_cpp_generator::generate_forward_declaration(t_struct* tstruct) {
  */
 void t_cpp_generator::generate_cpp_struct(t_struct* tstruct, bool is_exception) {
   generate_struct_declaration(f_types_, tstruct, is_exception, false, true, true, true, true);
-  generate_struct_definition(f_types_impl_, f_types_impl_, tstruct);
+  generate_struct_definition(f_types_impl_, f_types_impl_, tstruct, true, true);
 
-  std::ofstream& out = (gen_templates_ ? f_types_tcc_ : f_types_impl_);
+  std::ostream& out = (gen_templates_ ? f_types_tcc_ : f_types_impl_);
   generate_struct_reader(out, tstruct);
   generate_struct_writer(out, tstruct);
   generate_struct_swap(f_types_impl_, tstruct);
@@ -751,19 +884,23 @@ void t_cpp_generator::generate_cpp_struct(t_struct* tstruct, bool is_exception) 
   if (gen_moveable_) {
     generate_move_assignment_operator(f_types_impl_, tstruct);
   }
-  generate_struct_print_method(f_types_impl_, tstruct);
+
+  if (!has_custom_ostream(tstruct)) {
+    generate_struct_print_method(f_types_impl_, tstruct);
+  }
+
   if (is_exception) {
     generate_exception_what_method(f_types_impl_, tstruct);
   }
 }
 
-void t_cpp_generator::generate_copy_constructor(ofstream& out,
+void t_cpp_generator::generate_copy_constructor(ostream& out,
                                                 t_struct* tstruct,
                                                 bool is_exception) {
   generate_constructor_helper(out, tstruct, is_exception, /*is_move=*/false);
 }
 
-void t_cpp_generator::generate_move_constructor(ofstream& out,
+void t_cpp_generator::generate_move_constructor(ostream& out,
                                                 t_struct* tstruct,
                                                 bool is_exception) {
   generate_constructor_helper(out, tstruct, is_exception, /*is_move=*/true);
@@ -779,7 +916,7 @@ std::string maybeMove(std::string const& other, bool move) {
 }
 }
 
-void t_cpp_generator::generate_constructor_helper(ofstream& out,
+void t_cpp_generator::generate_constructor_helper(ostream& out,
                                                   t_struct* tstruct,
                                                   bool is_exception,
                                                   bool is_move) {
@@ -822,15 +959,15 @@ void t_cpp_generator::generate_constructor_helper(ofstream& out,
   indent(out) << "}" << endl;
 }
 
-void t_cpp_generator::generate_assignment_operator(ofstream& out, t_struct* tstruct) {
+void t_cpp_generator::generate_assignment_operator(ostream& out, t_struct* tstruct) {
   generate_assignment_helper(out, tstruct, /*is_move=*/false);
 }
 
-void t_cpp_generator::generate_move_assignment_operator(ofstream& out, t_struct* tstruct) {
+void t_cpp_generator::generate_move_assignment_operator(ostream& out, t_struct* tstruct) {
   generate_assignment_helper(out, tstruct, /*is_move=*/true);
 }
 
-void t_cpp_generator::generate_assignment_helper(ofstream& out, t_struct* tstruct, bool is_move) {
+void t_cpp_generator::generate_assignment_helper(ostream& out, t_struct* tstruct, bool is_move) {
   std::string tmp_name = tmp("other");
 
   indent(out) << tstruct->get_name() << "& " << tstruct->get_name() << "::operator=(";
@@ -873,7 +1010,7 @@ void t_cpp_generator::generate_assignment_helper(ofstream& out, t_struct* tstruc
  * @param out Output stream
  * @param tstruct The struct
  */
-void t_cpp_generator::generate_struct_declaration(ofstream& out,
+void t_cpp_generator::generate_struct_declaration(ostream& out,
                                                   t_struct* tstruct,
                                                   bool is_exception,
                                                   bool pointers,
@@ -1005,7 +1142,7 @@ void t_cpp_generator::generate_struct_declaration(ofstream& out,
   }
 
   if (tstruct->annotations_.find("final") == tstruct->annotations_.end()) {
-    out << endl << indent() << "virtual ~" << tstruct->get_name() << "() throw();" << endl;
+    out << endl << indent() << "virtual ~" << tstruct->get_name() << "() noexcept;" << endl;
   }
 
   // Declare all fields
@@ -1027,7 +1164,7 @@ void t_cpp_generator::generate_struct_declaration(ofstream& out,
       continue;
     }
     if (is_reference((*m_iter))) {
-      out << endl << indent() << "void __set_" << (*m_iter)->get_name() << "(boost::shared_ptr<"
+      out << endl << indent() << "void __set_" << (*m_iter)->get_name() << "(::std::shared_ptr<"
           << type_name((*m_iter)->get_type(), false, false) << ">";
       out << " val);" << endl;
     } else {
@@ -1094,7 +1231,7 @@ void t_cpp_generator::generate_struct_declaration(ofstream& out,
   }
   out << endl;
 
-  if (is_user_struct) {
+  if (is_user_struct && !has_custom_ostream(tstruct)) {
     out << indent() << "virtual ";
     generate_struct_print_method_decl(out, NULL);
     out << ";" << endl;
@@ -1118,14 +1255,15 @@ void t_cpp_generator::generate_struct_declaration(ofstream& out,
   }
 
   if (is_user_struct) {
-    generate_struct_ostream_operator(out, tstruct);
+    generate_struct_ostream_operator_decl(out, tstruct);
   }
 }
 
-void t_cpp_generator::generate_struct_definition(ofstream& out,
-                                                 ofstream& force_cpp_out,
+void t_cpp_generator::generate_struct_definition(ostream& out,
+                                                 ostream& force_cpp_out,
                                                  t_struct* tstruct,
-                                                 bool setters) {
+                                                 bool setters,
+                                                 bool is_user_struct) {
   // Get members
   vector<t_field*>::const_iterator m_iter;
   const vector<t_field*>& members = tstruct->get_members();
@@ -1133,7 +1271,7 @@ void t_cpp_generator::generate_struct_definition(ofstream& out,
   // Destructor
   if (tstruct->annotations_.find("final") == tstruct->annotations_.end()) {
     force_cpp_out << endl << indent() << tstruct->get_name() << "::~" << tstruct->get_name()
-                  << "() throw() {" << endl;
+                  << "() noexcept {" << endl;
     indent_up();
 
     indent_down();
@@ -1144,9 +1282,8 @@ void t_cpp_generator::generate_struct_definition(ofstream& out,
   if (setters) {
     for (m_iter = members.begin(); m_iter != members.end(); ++m_iter) {
       if (is_reference((*m_iter))) {
-        std::string type = type_name((*m_iter)->get_type());
         out << endl << indent() << "void " << tstruct->get_name() << "::__set_"
-            << (*m_iter)->get_name() << "(boost::shared_ptr<"
+            << (*m_iter)->get_name() << "(::std::shared_ptr<"
             << type_name((*m_iter)->get_type(), false, false) << ">";
         out << " val) {" << endl;
       } else {
@@ -1167,6 +1304,9 @@ void t_cpp_generator::generate_struct_definition(ofstream& out,
       out << indent() << "}" << endl;
     }
   }
+  if (is_user_struct) {
+    generate_struct_ostream_operator(out, tstruct);
+  }
   out << endl;
 }
 
@@ -1176,7 +1316,7 @@ void t_cpp_generator::generate_struct_definition(ofstream& out,
  * @param out Stream to write to
  * @param tstruct The struct
  */
-void t_cpp_generator::generate_struct_reader(ofstream& out, t_struct* tstruct, bool pointers) {
+void t_cpp_generator::generate_struct_reader(ostream& out, t_struct* tstruct, bool pointers) {
   if (gen_templates_) {
     out << indent() << "template <class Protocol_>" << endl << indent() << "uint32_t "
         << tstruct->get_name() << "::read(Protocol_* iprot) {" << endl;
@@ -1191,7 +1331,7 @@ void t_cpp_generator::generate_struct_reader(ofstream& out, t_struct* tstruct, b
 
   // Declare stack tmp variables
   out << endl
-      << indent() << "apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);" << endl
+      << indent() << "::apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);" << endl
       << indent() << "uint32_t xfer = 0;" << endl
       << indent() << "std::string fname;" << endl
       << indent() << "::apache::thrift::protocol::TType ftype;" << endl
@@ -1299,7 +1439,7 @@ void t_cpp_generator::generate_struct_reader(ofstream& out, t_struct* tstruct, b
  * @param out Stream to write to
  * @param tstruct The struct
  */
-void t_cpp_generator::generate_struct_writer(ofstream& out, t_struct* tstruct, bool pointers) {
+void t_cpp_generator::generate_struct_writer(ostream& out, t_struct* tstruct, bool pointers) {
   string name = tstruct->get_name();
   const vector<t_field*>& fields = tstruct->get_sorted_members();
   vector<t_field*>::const_iterator f_iter;
@@ -1315,7 +1455,7 @@ void t_cpp_generator::generate_struct_writer(ofstream& out, t_struct* tstruct, b
 
   out << indent() << "uint32_t xfer = 0;" << endl;
 
-  indent(out) << "apache::thrift::protocol::TOutputRecursionTracker tracker(*oprot);" << endl;
+  indent(out) << "::apache::thrift::protocol::TOutputRecursionTracker tracker(*oprot);" << endl;
   indent(out) << "xfer += oprot->writeStructBegin(\"" << name << "\");" << endl;
 
   for (f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
@@ -1365,7 +1505,7 @@ void t_cpp_generator::generate_struct_writer(ofstream& out, t_struct* tstruct, b
  * @param out Output stream
  * @param tstruct The result struct
  */
-void t_cpp_generator::generate_struct_result_writer(ofstream& out,
+void t_cpp_generator::generate_struct_result_writer(ostream& out,
                                                     t_struct* tstruct,
                                                     bool pointers) {
   string name = tstruct->get_name();
@@ -1429,7 +1569,7 @@ void t_cpp_generator::generate_struct_result_writer(ofstream& out,
  * @param out Stream to write to
  * @param tstruct The struct
  */
-void t_cpp_generator::generate_struct_swap(ofstream& out, t_struct* tstruct) {
+void t_cpp_generator::generate_struct_swap(ostream& out, t_struct* tstruct) {
   out << indent() << "void swap(" << tstruct->get_name() << " &a, " << tstruct->get_name()
       << " &b) {" << endl;
   indent_up();
@@ -1441,9 +1581,7 @@ void t_cpp_generator::generate_struct_swap(ofstream& out, t_struct* tstruct) {
 
   bool has_nonrequired_fields = false;
   const vector<t_field*>& fields = tstruct->get_members();
-  for (vector<t_field*>::const_iterator f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
-    t_field* tfield = *f_iter;
-
+  for (auto tfield : fields) {
     if (tfield->get_req() != t_field::T_REQUIRED) {
       has_nonrequired_fields = true;
     }
@@ -1466,18 +1604,28 @@ void t_cpp_generator::generate_struct_swap(ofstream& out, t_struct* tstruct) {
   out << endl;
 }
 
-void t_cpp_generator::generate_struct_ostream_operator(std::ofstream& out, t_struct* tstruct) {
-  out << "inline std::ostream& operator<<(std::ostream& out, const "
+void t_cpp_generator::generate_struct_ostream_operator_decl(std::ostream& out, t_struct* tstruct) {
+  out << "std::ostream& operator<<(std::ostream& out, const "
       << tstruct->get_name()
-      << "& obj)" << endl;
-  scope_up(out);
-  out << indent() << "obj.printTo(out);" << endl
-      << indent() << "return out;" << endl;
-  scope_down(out);
+      << "& obj);" << endl;
   out << endl;
 }
 
-void t_cpp_generator::generate_struct_print_method_decl(std::ofstream& out, t_struct* tstruct) {
+void t_cpp_generator::generate_struct_ostream_operator(std::ostream& out, t_struct* tstruct) {
+  if (!has_custom_ostream(tstruct)) {
+    // thrift defines this behavior
+    out << "std::ostream& operator<<(std::ostream& out, const "
+        << tstruct->get_name()
+        << "& obj)" << endl;
+    scope_up(out);
+    out << indent() << "obj.printTo(out);" << endl
+        << indent() << "return out;" << endl;
+    scope_down(out);
+    out << endl;
+  }
+}
+
+void t_cpp_generator::generate_struct_print_method_decl(std::ostream& out, t_struct* tstruct) {
   out << "void ";
   if (tstruct) {
     out << tstruct->get_name() << "::";
@@ -1485,44 +1633,44 @@ void t_cpp_generator::generate_struct_print_method_decl(std::ofstream& out, t_st
   out << "printTo(std::ostream& out) const";
 }
 
-void t_cpp_generator::generate_exception_what_method_decl(std::ofstream& out,
+void t_cpp_generator::generate_exception_what_method_decl(std::ostream& out,
                                                           t_struct* tstruct,
                                                           bool external) {
   out << "const char* ";
   if (external) {
     out << tstruct->get_name() << "::";
   }
-  out << "what() const throw()";
+  out << "what() const noexcept";
 }
 
 namespace struct_ostream_operator_generator {
-void generate_required_field_value(std::ofstream& out, const t_field* field) {
+void generate_required_field_value(std::ostream& out, const t_field* field) {
   out << " << to_string(" << field->get_name() << ")";
 }
 
-void generate_optional_field_value(std::ofstream& out, const t_field* field) {
+void generate_optional_field_value(std::ostream& out, const t_field* field) {
   out << "; (__isset." << field->get_name() << " ? (out";
   generate_required_field_value(out, field);
   out << ") : (out << \"<null>\"))";
 }
 
-void generate_field_value(std::ofstream& out, const t_field* field) {
+void generate_field_value(std::ostream& out, const t_field* field) {
   if (field->get_req() == t_field::T_OPTIONAL)
     generate_optional_field_value(out, field);
   else
     generate_required_field_value(out, field);
 }
 
-void generate_field_name(std::ofstream& out, const t_field* field) {
+void generate_field_name(std::ostream& out, const t_field* field) {
   out << "\"" << field->get_name() << "=\"";
 }
 
-void generate_field(std::ofstream& out, const t_field* field) {
+void generate_field(std::ostream& out, const t_field* field) {
   generate_field_name(out, field);
   generate_field_value(out, field);
 }
 
-void generate_fields(std::ofstream& out,
+void generate_fields(std::ostream& out,
                      const vector<t_field*>& fields,
                      const std::string& indent) {
   const vector<t_field*>::const_iterator beg = fields.begin();
@@ -1544,7 +1692,7 @@ void generate_fields(std::ofstream& out,
 /**
  * Generates operator<<
  */
-void t_cpp_generator::generate_struct_print_method(std::ofstream& out, t_struct* tstruct) {
+void t_cpp_generator::generate_struct_print_method(std::ostream& out, t_struct* tstruct) {
   out << indent();
   generate_struct_print_method_decl(out, tstruct);
   out << " {" << endl;
@@ -1563,7 +1711,7 @@ void t_cpp_generator::generate_struct_print_method(std::ofstream& out, t_struct*
 /**
  * Generates what() method for exceptions
  */
-void t_cpp_generator::generate_exception_what_method(std::ofstream& out, t_struct* tstruct) {
+void t_cpp_generator::generate_exception_what_method(std::ostream& out, t_struct* tstruct) {
   out << indent();
   generate_exception_what_method_decl(out, tstruct, true);
   out << " {" << endl;
@@ -1611,8 +1759,8 @@ void t_cpp_generator::generate_service(t_service* tservice) {
   f_header_ << "#ifndef " << svcname << "_H" << endl << "#define " << svcname << "_H" << endl
             << endl;
   if (gen_cob_style_) {
-    f_header_ << "#include <thrift/transport/TBufferTransports.h>" << endl << // TMemoryBuffer
-        "#include <thrift/cxxfunctional.h>" << endl
+    f_header_ << "#include <thrift/transport/TBufferTransports.h>" << endl // TMemoryBuffer
+              << "#include <functional>" << endl 
               << "namespace apache { namespace thrift { namespace async {" << endl
               << "class TAsyncChannel;" << endl << "}}}" << endl;
   }
@@ -1621,6 +1769,7 @@ void t_cpp_generator::generate_service(t_service* tservice) {
     f_header_ << "#include <thrift/async/TAsyncDispatchProcessor.h>" << endl;
   }
   f_header_ << "#include <thrift/async/TConcurrentClientSyncInfo.h>" << endl;
+  f_header_ << "#include <memory>" << endl;
   f_header_ << "#include \"" << get_include_prefix(*get_program()) << program_name_ << "_types.h\""
             << endl;
 
@@ -1632,7 +1781,7 @@ void t_cpp_generator::generate_service(t_service* tservice) {
 
   f_header_ << endl << ns_open_ << endl << endl;
 
-  f_header_ << "#ifdef _WIN32\n"
+  f_header_ << "#ifdef _MSC_VER\n"
                "  #pragma warning( push )\n"
                "  #pragma warning (disable : 4250 ) //inheriting methods via dominance \n"
                "#endif\n\n";
@@ -1674,8 +1823,12 @@ void t_cpp_generator::generate_service(t_service* tservice) {
   generate_service_client(tservice, "");
   generate_service_processor(tservice, "");
   generate_service_multiface(tservice);
-  generate_service_skeleton(tservice);
   generate_service_client(tservice, "Concurrent");
+
+  // Generate skeleton
+  if (!gen_no_skeleton_) {
+      generate_service_skeleton(tservice);
+  }
 
   // Generate all the cob components
   if (gen_cob_style_) {
@@ -1685,10 +1838,14 @@ void t_cpp_generator::generate_service(t_service* tservice) {
     generate_service_null(tservice, "CobSv");
     generate_service_client(tservice, "Cob");
     generate_service_processor(tservice, "Cob");
-    generate_service_async_skeleton(tservice);
+
+    if (!gen_no_skeleton_) {
+      generate_service_async_skeleton(tservice);
+    }
+
   }
 
-  f_header_ << "#ifdef _WIN32\n"
+  f_header_ << "#ifdef _MSC_VER\n"
                "  #pragma warning( pop )\n"
                "#endif\n\n";
 
@@ -1722,7 +1879,7 @@ void t_cpp_generator::generate_service(t_service* tservice) {
 void t_cpp_generator::generate_service_helpers(t_service* tservice) {
   vector<t_function*> functions = tservice->get_functions();
   vector<t_function*>::iterator f_iter;
-  std::ofstream& out = (gen_templates_ ? f_service_tcc_ : f_service_);
+  std::ostream& out = (gen_templates_ ? f_service_tcc_ : f_service_);
 
   for (f_iter = functions.begin(); f_iter != functions.end(); ++f_iter) {
     t_struct* ts = (*f_iter)->get_arglist();
@@ -1854,7 +2011,7 @@ void t_cpp_generator::generate_service_interface_factory(t_service* tservice, st
   f_header_ << "class " << singleton_factory_name << " : virtual public " << factory_name << " {"
             << endl << " public:" << endl;
   indent_up();
-  f_header_ << indent() << singleton_factory_name << "(const boost::shared_ptr<" << service_if_name
+  f_header_ << indent() << singleton_factory_name << "(const ::std::shared_ptr<" << service_if_name
             << ">& iface) : iface_(iface) {}" << endl << indent() << "virtual ~"
             << singleton_factory_name << "() {}" << endl << endl << indent() << "virtual "
             << service_if_name << "* getHandler("
@@ -1862,7 +2019,7 @@ void t_cpp_generator::generate_service_interface_factory(t_service* tservice, st
             << "  return iface_.get();" << endl << indent() << "}" << endl << indent()
             << "virtual void releaseHandler(" << base_if_name << "* /* handler */) {}" << endl;
 
-  f_header_ << endl << " protected:" << endl << indent() << "boost::shared_ptr<" << service_if_name
+  f_header_ << endl << " protected:" << endl << indent() << "::std::shared_ptr<" << service_if_name
             << "> iface_;" << endl;
 
   indent_down();
@@ -1958,7 +2115,7 @@ void t_cpp_generator::generate_service_async_skeleton(t_service* tservice) {
 
   string ns = namespace_prefix(tservice->get_program()->get_namespace("cpp"));
 
-  ofstream f_skeleton;
+  ofstream_with_content_based_conditional_update f_skeleton;
   f_skeleton.open(f_skeleton_name.c_str());
   f_skeleton << "// This autogenerated skeleton file illustrates one way to adapt a synchronous"
              << endl << "// interface into an asynchronous interface. You should copy it to another"
@@ -1970,8 +2127,7 @@ void t_cpp_generator::generate_service_async_skeleton(t_service* tservice) {
              << "using namespace ::apache::thrift;" << endl
              << "using namespace ::apache::thrift::protocol;" << endl
              << "using namespace ::apache::thrift::transport;" << endl
-             << "using namespace ::apache::thrift::async;" << endl << endl
-             << "using boost::shared_ptr;" << endl << endl;
+             << "using namespace ::apache::thrift::async;" << endl << endl;
 
   // the following code would not compile:
   // using namespace ;
@@ -2033,7 +2189,7 @@ void t_cpp_generator::generate_service_multiface(t_service* tservice) {
     extends_multiface = ", public " + extends + "Multiface";
   }
 
-  string list_type = string("std::vector<boost::shared_ptr<") + service_name_ + "If> >";
+  string list_type = string("std::vector<std::shared_ptr<") + service_name_ + "If> >";
 
   // Generate the header portion
   f_header_ << "class " << service_name_ << "Multiface : "
@@ -2044,7 +2200,7 @@ void t_cpp_generator::generate_service_multiface(t_service* tservice) {
             << "& ifaces) : ifaces_(ifaces) {" << endl;
   if (!extends.empty()) {
     f_header_ << indent()
-              << "  std::vector<boost::shared_ptr<" + service_name_ + "If> >::iterator iter;"
+              << "  std::vector<std::shared_ptr<" + service_name_ + "If> >::iterator iter;"
               << endl << indent() << "  for (iter = ifaces.begin(); iter != ifaces.end(); ++iter) {"
               << endl << indent() << "    " << extends << "Multiface::add(*iter);" << endl
               << indent() << "  }" << endl;
@@ -2057,7 +2213,7 @@ void t_cpp_generator::generate_service_multiface(t_service* tservice) {
   f_header_ << " protected:" << endl;
   indent_up();
   f_header_ << indent() << list_type << " ifaces_;" << endl << indent() << service_name_
-            << "Multiface() {}" << endl << indent() << "void add(boost::shared_ptr<"
+            << "Multiface() {}" << endl << indent() << "void add(::std::shared_ptr<"
             << service_name_ << "If> iface) {" << endl;
   if (!extends.empty()) {
     f_header_ << indent() << "  " << extends << "Multiface::add(iface);" << endl;
@@ -2127,7 +2283,7 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
     ifstyle = "CobCl";
   }
 
-  std::ofstream& out = (gen_templates_ ? f_service_tcc_ : f_service_);
+  std::ostream& out = (gen_templates_ ? f_service_tcc_ : f_service_);
   string template_header, template_suffix, short_suffix, protocol_type, _this;
   string const prot_factory_type = "::apache::thrift::protocol::TProtocolFactory";
   if (gen_templates_) {
@@ -2139,7 +2295,7 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
   } else {
     protocol_type = "::apache::thrift::protocol::TProtocol";
   }
-  string prot_ptr = "boost::shared_ptr< " + protocol_type + ">";
+  string prot_ptr = "std::shared_ptr< " + protocol_type + ">";
   string client_suffix = "Client" + template_suffix;
   string if_suffix = "If";
   if (style == "Cob") {
@@ -2169,27 +2325,49 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
   indent_up();
   if (style != "Cob") {
     f_header_ << indent() << service_name_ << style << "Client" << short_suffix << "(" << prot_ptr
-              << " prot) ";
+		<< " prot";
+	if (style == "Concurrent") {
+		f_header_ << ", std::shared_ptr<::apache::thrift::async::TConcurrentClientSyncInfo> sync";
+	}
+	f_header_ << ") ";
 
     if (extends.empty()) {
+      if (style == "Concurrent") {
+        f_header_ << ": sync_(sync)" << endl;
+      }
       f_header_ << "{" << endl;
       f_header_ << indent() << "  setProtocol" << short_suffix << "(prot);" << endl << indent()
                 << "}" << endl;
     } else {
       f_header_ << ":" << endl;
-      f_header_ << indent() << "  " << extends << style << client_suffix << "(prot, prot) {}"
-                << endl;
+      f_header_ << indent() << "  " << extends << style << client_suffix << "(prot, prot";
+      if (style == "Concurrent") {
+          f_header_ << ", sync";
+      }
+      f_header_ << ") {}" << endl;
     }
 
     f_header_ << indent() << service_name_ << style << "Client" << short_suffix << "(" << prot_ptr
-              << " iprot, " << prot_ptr << " oprot) ";
+		<< " iprot, " << prot_ptr << " oprot";
+	if (style == "Concurrent") {
+		f_header_ << ", std::shared_ptr<::apache::thrift::async::TConcurrentClientSyncInfo> sync";
+	}
+	f_header_ << ") ";
+	
     if (extends.empty()) {
+      if (style == "Concurrent") {
+        f_header_ << ": sync_(sync)" << endl;
+      }
       f_header_ << "{" << endl;
       f_header_ << indent() << "  setProtocol" << short_suffix << "(iprot,oprot);" << endl
                 << indent() << "}" << endl;
     } else {
       f_header_ << ":" << indent() << "  " << extends << style << client_suffix
-                << "(iprot, oprot) {}" << endl;
+                << "(iprot, oprot";
+      if (style == "Concurrent") {
+          f_header_ << ", sync";
+      }
+      f_header_ << ") {}" << endl;
     }
 
     // create the setProtocol methods
@@ -2216,18 +2394,18 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
     // Note that these are not currently templated for simplicity.
     // TODO(simpkins): should they be templated?
     f_header_ << indent()
-              << "boost::shared_ptr< ::apache::thrift::protocol::TProtocol> getInputProtocol() {"
+              << "std::shared_ptr< ::apache::thrift::protocol::TProtocol> getInputProtocol() {"
               << endl << indent() << "  return " << _this << "piprot_;" << endl << indent() << "}"
               << endl;
 
     f_header_ << indent()
-              << "boost::shared_ptr< ::apache::thrift::protocol::TProtocol> getOutputProtocol() {"
+              << "std::shared_ptr< ::apache::thrift::protocol::TProtocol> getOutputProtocol() {"
               << endl << indent() << "  return " << _this << "poprot_;" << endl << indent() << "}"
               << endl;
 
   } else /* if (style == "Cob") */ {
     f_header_ << indent() << service_name_ << style << "Client" << short_suffix << "("
-              << "boost::shared_ptr< ::apache::thrift::async::TAsyncChannel> channel, "
+              << "std::shared_ptr< ::apache::thrift::async::TAsyncChannel> channel, "
               << "::apache::thrift::protocol::TProtocolFactory* protocolFactory) :" << endl;
     if (extends.empty()) {
       f_header_ << indent() << "  channel_(channel)," << endl << indent()
@@ -2237,9 +2415,9 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
       if (gen_templates_) {
         // TProtocolFactory classes return generic TProtocol pointers.
         // We have to dynamic cast to the Protocol_ type we are expecting.
-        f_header_ << indent() << "  piprot_(boost::dynamic_pointer_cast<Protocol_>("
+        f_header_ << indent() << "  piprot_(::std::dynamic_pointer_cast<Protocol_>("
                   << "protocolFactory->getProtocol(itrans_)))," << endl << indent()
-                  << "  poprot_(boost::dynamic_pointer_cast<Protocol_>("
+                  << "  poprot_(::std::dynamic_pointer_cast<Protocol_>("
                   << "protocolFactory->getProtocol(otrans_))) {" << endl;
         // Throw a TException if either dynamic cast failed.
         f_header_ << indent() << "  if (!piprot_ || !poprot_) {" << endl << indent()
@@ -2261,7 +2439,7 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
 
   if (style == "Cob") {
     f_header_ << indent()
-              << "boost::shared_ptr< ::apache::thrift::async::TAsyncChannel> getChannel() {" << endl
+              << "::std::shared_ptr< ::apache::thrift::async::TAsyncChannel> getChannel() {" << endl
               << indent() << "  return " << _this << "channel_;" << endl << indent() << "}" << endl;
     if (!gen_no_client_completion_) {
       f_header_ << indent() << "virtual void completed__(bool /* success */) {}" << endl;
@@ -2313,11 +2491,11 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
 
     if (style == "Cob") {
       f_header_ << indent()
-                << "boost::shared_ptr< ::apache::thrift::async::TAsyncChannel> channel_;" << endl
+                << "::std::shared_ptr< ::apache::thrift::async::TAsyncChannel> channel_;" << endl
                 << indent()
-                << "boost::shared_ptr< ::apache::thrift::transport::TMemoryBuffer> itrans_;" << endl
+                << "::std::shared_ptr< ::apache::thrift::transport::TMemoryBuffer> itrans_;" << endl
                 << indent()
-                << "boost::shared_ptr< ::apache::thrift::transport::TMemoryBuffer> otrans_;"
+                << "::std::shared_ptr< ::apache::thrift::transport::TMemoryBuffer> otrans_;"
                 << endl;
     }
     f_header_ <<
@@ -2328,7 +2506,7 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
 
     if (style == "Concurrent") {
       f_header_ <<
-        indent() << "::apache::thrift::async::TConcurrentClientSyncInfo sync_;"<<endl;
+        indent() << "std::shared_ptr<::apache::thrift::async::TConcurrentClientSyncInfo> sync_;"<<endl;
     }
     indent_down();
   }
@@ -2399,11 +2577,11 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
     } else {
       if (!(*f_iter)->is_oneway()) {
         out << indent() << _this << "channel_->sendAndRecvMessage("
-            << "tcxx::bind(cob, this), " << _this << "otrans_.get(), " << _this << "itrans_.get());"
+            << "::std::bind(cob, this), " << _this << "otrans_.get(), " << _this << "itrans_.get());"
             << endl;
       } else {
         out << indent() << _this << "channel_->sendMessage("
-            << "tcxx::bind(cob, this), " << _this << "otrans_.get());" << endl;
+            << "::std::bind(cob, this), " << _this << "otrans_.get());" << endl;
       }
     }
     scope_down(out);
@@ -2434,7 +2612,7 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
       string cseqidVal = "0";
       if (style == "Concurrent") {
         if (!(*f_iter)->is_oneway()) {
-          cseqidVal = "this->sync_.generateSeqId()";
+          cseqidVal = "this->sync_->generateSeqId()";
         }
       }
       // Serialize the request
@@ -2442,7 +2620,7 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
         indent() << "int32_t cseqid = " << cseqidVal << ";" << endl;
       if(style == "Concurrent") {
         out <<
-          indent() << "::apache::thrift::async::TConcurrentSendSentry sentry(&this->sync_);" << endl;
+          indent() << "::apache::thrift::async::TConcurrentSendSentry sentry(this->sync_.get());" << endl;
       }
       if (style == "Cob") {
         out <<
@@ -2507,7 +2685,7 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
             endl <<
             indent() << "// the read mutex gets dropped and reacquired as part of waitForWork()" << endl <<
             indent() << "// The destructor of this sentry wakes up other clients" << endl <<
-            indent() << "::apache::thrift::async::TConcurrentRecvSentry sentry(&this->sync_, seqid);" << endl;
+            indent() << "::apache::thrift::async::TConcurrentRecvSentry sentry(this->sync_.get(), seqid);" << endl;
         }
         if (style == "Cob" && !gen_no_client_completion_) {
           out << indent() << "bool completed = false;" << endl << endl << indent() << "try {";
@@ -2517,7 +2695,7 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
         if (style == "Concurrent") {
           out <<
             indent() << "while(true) {" << endl <<
-            indent() << "  if(!this->sync_.getPending(fname, mtype, rseqid)) {" << endl;
+            indent() << "  if(!this->sync_->getPending(fname, mtype, rseqid)) {" << endl;
           indent_up();
           indent_up();
         }
@@ -2661,10 +2839,10 @@ void t_cpp_generator::generate_service_client(t_service* tservice, string style)
           out <<
             indent() << "  }" << endl <<
             indent() << "  // seqid != rseqid" << endl <<
-            indent() << "  this->sync_.updatePending(fname, mtype, rseqid);" << endl <<
+            indent() << "  this->sync_->updatePending(fname, mtype, rseqid);" << endl <<
             endl <<
             indent() << "  // this will temporarily unlock the readMutex, and let other clients get work done" << endl <<
-            indent() << "  this->sync_.waitForWork(seqid);" << endl <<
+            indent() << "  this->sync_->waitForWork(seqid);" << endl <<
             indent() << "} // end while(true)" << endl;
         }
         if (style == "Cob" && !gen_no_client_completion_) {
@@ -2718,8 +2896,8 @@ protected:
 
   t_cpp_generator* generator_;
   t_service* service_;
-  std::ofstream& f_header_;
-  std::ofstream& f_out_;
+  std::ostream& f_header_;
+  std::ostream& f_out_;
   string service_name_;
   string style_;
   string pstyle_;
@@ -2754,8 +2932,8 @@ ProcessorGenerator::ProcessorGenerator(t_cpp_generator* generator,
     class_name_ = service_name_ + pstyle_ + "Processor";
     if_name_ = service_name_ + "CobSvIf";
 
-    finish_cob_ = "tcxx::function<void(bool ok)> cob, ";
-    finish_cob_decl_ = "tcxx::function<void(bool ok)>, ";
+    finish_cob_ = "::std::function<void(bool ok)> cob, ";
+    finish_cob_decl_ = "::std::function<void(bool ok)>, ";
     cob_arg_ = "cob, ";
     ret_type_ = "void ";
   } else {
@@ -2816,7 +2994,7 @@ void ProcessorGenerator::generate_class_definition() {
   // Protected data members
   f_header_ << " protected:" << endl;
   indent_up();
-  f_header_ << indent() << "boost::shared_ptr<" << if_name_ << "> iface_;" << endl;
+  f_header_ << indent() << "::std::shared_ptr<" << if_name_ << "> iface_;" << endl;
   f_header_ << indent() << "virtual " << ret_type_ << "dispatchCall(" << finish_cob_
             << "::apache::thrift::protocol::TProtocol* iprot, "
             << "::apache::thrift::protocol::TProtocol* oprot, "
@@ -2872,29 +3050,29 @@ void ProcessorGenerator::generate_class_definition() {
                             ? ""
                             : ", const " + type_name((*f_iter)->get_returntype()) + "& _return");
       f_header_ << indent() << "void return_" << (*f_iter)->get_name()
-                << "(tcxx::function<void(bool ok)> cob, int32_t seqid, "
+                << "(::std::function<void(bool ok)> cob, int32_t seqid, "
                 << "::apache::thrift::protocol::TProtocol* oprot, "
                 << "void* ctx" << ret_arg << ");" << endl;
       if (generator_->gen_templates_) {
         f_header_ << indent() << "void return_" << (*f_iter)->get_name()
-                  << "(tcxx::function<void(bool ok)> cob, int32_t seqid, "
+                  << "(::std::function<void(bool ok)> cob, int32_t seqid, "
                   << "Protocol_* oprot, void* ctx" << ret_arg << ");" << endl;
       }
       // XXX Don't declare throw if it doesn't exist
       f_header_ << indent() << "void throw_" << (*f_iter)->get_name()
-                << "(tcxx::function<void(bool ok)> cob, int32_t seqid, "
+                << "(::std::function<void(bool ok)> cob, int32_t seqid, "
                 << "::apache::thrift::protocol::TProtocol* oprot, void* ctx, "
                 << "::apache::thrift::TDelayedException* _throw);" << endl;
       if (generator_->gen_templates_) {
         f_header_ << indent() << "void throw_" << (*f_iter)->get_name()
-                  << "(tcxx::function<void(bool ok)> cob, int32_t seqid, "
+                  << "(::std::function<void(bool ok)> cob, int32_t seqid, "
                   << "Protocol_* oprot, void* ctx, "
                   << "::apache::thrift::TDelayedException* _throw);" << endl;
       }
     }
   }
 
-  f_header_ << " public:" << endl << indent() << class_name_ << "(boost::shared_ptr<" << if_name_
+  f_header_ << " public:" << endl << indent() << class_name_ << "(::std::shared_ptr<" << if_name_
             << "> iface) :" << endl;
   if (!extends_.empty()) {
     f_header_ << indent() << "  " << extends_ << "(iface)," << endl;
@@ -3032,14 +3210,14 @@ void ProcessorGenerator::generate_factory() {
             << endl << " public:" << endl;
   indent_up();
 
-  f_header_ << indent() << factory_class_name_ << "(const ::boost::shared_ptr< " << if_factory_name
+  f_header_ << indent() << factory_class_name_ << "(const ::std::shared_ptr< " << if_factory_name
             << " >& handlerFactory) :" << endl << indent()
             << "    handlerFactory_(handlerFactory) {}" << endl << endl << indent()
-            << "::boost::shared_ptr< ::apache::thrift::"
+            << "::std::shared_ptr< ::apache::thrift::"
             << (style_ == "Cob" ? "async::TAsyncProcessor" : "TProcessor") << " > "
             << "getProcessor(const ::apache::thrift::TConnectionInfo& connInfo);" << endl;
 
-  f_header_ << endl << " protected:" << endl << indent() << "::boost::shared_ptr< "
+  f_header_ << endl << " protected:" << endl << indent() << "::std::shared_ptr< "
             << if_factory_name << " > handlerFactory_;" << endl;
 
   indent_down();
@@ -3054,17 +3232,17 @@ void ProcessorGenerator::generate_factory() {
   }
 
   // Generate the getProcessor() method
-  f_out_ << template_header_ << indent() << "::boost::shared_ptr< ::apache::thrift::"
+  f_out_ << template_header_ << indent() << "::std::shared_ptr< ::apache::thrift::"
          << (style_ == "Cob" ? "async::TAsyncProcessor" : "TProcessor") << " > "
          << factory_class_name_ << template_suffix_ << "::getProcessor("
          << "const ::apache::thrift::TConnectionInfo& connInfo) {" << endl;
   indent_up();
 
   f_out_ << indent() << "::apache::thrift::ReleaseHandler< " << if_factory_name
-         << " > cleanup(handlerFactory_);" << endl << indent() << "::boost::shared_ptr< "
+         << " > cleanup(handlerFactory_);" << endl << indent() << "::std::shared_ptr< "
          << if_name_ << " > handler("
          << "handlerFactory_->getHandler(connInfo), cleanup);" << endl << indent()
-         << "::boost::shared_ptr< ::apache::thrift::"
+         << "::std::shared_ptr< ::apache::thrift::"
          << (style_ == "Cob" ? "async::TAsyncProcessor" : "TProcessor") << " > "
          << "processor(new " << class_name_ << template_suffix_ << "(handler));" << endl << indent()
          << "return processor;" << endl;
@@ -3093,7 +3271,7 @@ void t_cpp_generator::generate_function_helpers(t_service* tservice, t_function*
     return;
   }
 
-  std::ofstream& out = (gen_templates_ ? f_service_tcc_ : f_service_);
+  std::ostream& out = (gen_templates_ ? f_service_tcc_ : f_service_);
 
   t_struct result(program_, tservice->get_name() + "_" + tfunction->get_name() + "_result");
   t_field success(tfunction->get_returntype(), "success", 0);
@@ -3140,7 +3318,7 @@ void t_cpp_generator::generate_process_function(t_service* tservice,
   vector<t_field*>::const_iterator x_iter;
   string service_func_name = "\"" + tservice->get_name() + "." + tfunction->get_name() + "\"";
 
-  std::ofstream& out = (gen_templates_ ? f_service_tcc_ : f_service_);
+  std::ostream& out = (gen_templates_ ? f_service_tcc_ : f_service_);
 
   string prot_type = (specialized ? "Protocol_" : "::apache::thrift::protocol::TProtocol");
   string class_suffix;
@@ -3299,7 +3477,7 @@ void t_cpp_generator::generate_process_function(t_service* tservice,
       out << indent() << "template <class Protocol_>" << endl;
     }
     out << "void " << tservice->get_name() << "AsyncProcessor" << class_suffix << "::process_"
-        << tfunction->get_name() << "(tcxx::function<void(bool ok)> cob, int32_t seqid, "
+        << tfunction->get_name() << "(::std::function<void(bool ok)> cob, int32_t seqid, "
         << prot_type << "* iprot, " << prot_type << "* oprot)" << endl;
     scope_up(out);
 
@@ -3356,28 +3534,28 @@ void t_cpp_generator::generate_process_function(t_service* tservice,
       // No return.  Just hand off our cob.
       // TODO(dreiss): Call the cob immediately?
       out << indent() << "iface_->" << tfunction->get_name() << "("
-          << "tcxx::bind(cob, true)" << endl;
+          << "::std::bind(cob, true)" << endl;
       indent_up();
       indent_up();
     } else {
       string ret_arg, ret_placeholder;
       if (!tfunction->get_returntype()->is_void()) {
         ret_arg = ", const " + type_name(tfunction->get_returntype()) + "& _return";
-        ret_placeholder = ", tcxx::placeholders::_1";
+        ret_placeholder = ", ::std::placeholders::_1";
       }
 
       // When gen_templates_ is true, the return_ and throw_ functions are
       // overloaded.  We have to declare pointers to them so that the compiler
       // can resolve the correct overloaded version.
       out << indent() << "void (" << tservice->get_name() << "AsyncProcessor" << class_suffix
-          << "::*return_fn)(tcxx::function<void(bool ok)> "
+          << "::*return_fn)(::std::function<void(bool ok)> "
           << "cob, int32_t seqid, " << prot_type << "* oprot, void* ctx" << ret_arg
           << ") =" << endl;
       out << indent() << "  &" << tservice->get_name() << "AsyncProcessor" << class_suffix
           << "::return_" << tfunction->get_name() << ";" << endl;
       if (!xceptions.empty()) {
         out << indent() << "void (" << tservice->get_name() << "AsyncProcessor" << class_suffix
-            << "::*throw_fn)(tcxx::function<void(bool ok)> "
+            << "::*throw_fn)(::std::function<void(bool ok)> "
             << "cob, int32_t seqid, " << prot_type << "* oprot, void* ctx, "
             << "::apache::thrift::TDelayedException* _throw) =" << endl;
         out << indent() << "  &" << tservice->get_name() << "AsyncProcessor" << class_suffix
@@ -3387,11 +3565,11 @@ void t_cpp_generator::generate_process_function(t_service* tservice,
       out << indent() << "iface_->" << tfunction->get_name() << "(" << endl;
       indent_up();
       indent_up();
-      out << indent() << "tcxx::bind(return_fn, this, cob, seqid, oprot, ctx" << ret_placeholder
+      out << indent() << "::std::bind(return_fn, this, cob, seqid, oprot, ctx" << ret_placeholder
           << ")";
       if (!xceptions.empty()) {
-        out << ',' << endl << indent() << "tcxx::bind(throw_fn, this, cob, seqid, oprot, "
-            << "ctx, tcxx::placeholders::_1)";
+        out << ',' << endl << indent() << "::std::bind(throw_fn, this, cob, seqid, oprot, "
+            << "ctx, ::std::placeholders::_1)";
       }
     }
 
@@ -3416,7 +3594,7 @@ void t_cpp_generator::generate_process_function(t_service* tservice,
         out << indent() << "template <class Protocol_>" << endl;
       }
       out << "void " << tservice->get_name() << "AsyncProcessor" << class_suffix << "::return_"
-          << tfunction->get_name() << "(tcxx::function<void(bool ok)> cob, int32_t seqid, "
+          << tfunction->get_name() << "(::std::function<void(bool ok)> cob, int32_t seqid, "
           << prot_type << "* oprot, void* ctx" << ret_arg_decl << ')' << endl;
       scope_up(out);
 
@@ -3464,7 +3642,7 @@ void t_cpp_generator::generate_process_function(t_service* tservice,
         out << indent() << "template <class Protocol_>" << endl;
       }
       out << "void " << tservice->get_name() << "AsyncProcessor" << class_suffix << "::throw_"
-          << tfunction->get_name() << "(tcxx::function<void(bool ok)> cob, int32_t seqid, "
+          << tfunction->get_name() << "(::std::function<void(bool ok)> cob, int32_t seqid, "
           << prot_type << "* oprot, void* ctx, "
           << "::apache::thrift::TDelayedException* _throw)" << endl;
       scope_up(out);
@@ -3552,7 +3730,7 @@ void t_cpp_generator::generate_service_skeleton(t_service* tservice) {
 
   string ns = namespace_prefix(tservice->get_program()->get_namespace("cpp"));
 
-  ofstream f_skeleton;
+  ofstream_with_content_based_conditional_update f_skeleton;
   f_skeleton.open(f_skeleton_name.c_str());
   f_skeleton << "// This autogenerated skeleton file illustrates how to build a server." << endl
              << "// You should copy it to another filename to avoid overwriting it." << endl << endl
@@ -3564,8 +3742,7 @@ void t_cpp_generator::generate_service_skeleton(t_service* tservice) {
              << "using namespace ::apache::thrift;" << endl
              << "using namespace ::apache::thrift::protocol;" << endl
              << "using namespace ::apache::thrift::transport;" << endl
-             << "using namespace ::apache::thrift::server;" << endl << endl
-             << "using boost::shared_ptr;" << endl << endl;
+             << "using namespace ::apache::thrift::server;" << endl << endl;
 
   // the following code would not compile:
   // using namespace ;
@@ -3595,13 +3772,13 @@ void t_cpp_generator::generate_service_skeleton(t_service* tservice) {
   f_skeleton << indent() << "int main(int argc, char **argv) {" << endl;
   indent_up();
   f_skeleton
-      << indent() << "int port = 9090;" << endl << indent() << "shared_ptr<" << svcname
+      << indent() << "int port = 9090;" << endl << indent() << "::std::shared_ptr<" << svcname
       << "Handler> handler(new " << svcname << "Handler());" << endl << indent()
-      << "shared_ptr<TProcessor> processor(new " << svcname << "Processor(handler));" << endl
-      << indent() << "shared_ptr<TServerTransport> serverTransport(new TServerSocket(port));"
+      << "::std::shared_ptr<TProcessor> processor(new " << svcname << "Processor(handler));" << endl
+      << indent() << "::std::shared_ptr<TServerTransport> serverTransport(new TServerSocket(port));"
       << endl << indent()
-      << "shared_ptr<TTransportFactory> transportFactory(new TBufferedTransportFactory());" << endl
-      << indent() << "shared_ptr<TProtocolFactory> protocolFactory(new TBinaryProtocolFactory());"
+      << "::std::shared_ptr<TTransportFactory> transportFactory(new TBufferedTransportFactory());" << endl
+      << indent() << "::std::shared_ptr<TProtocolFactory> protocolFactory(new TBinaryProtocolFactory());"
       << endl << endl << indent()
       << "TSimpleServer server(processor, serverTransport, transportFactory, protocolFactory);"
       << endl << indent() << "server.serve();" << endl << indent() << "return 0;" << endl;
@@ -3615,7 +3792,7 @@ void t_cpp_generator::generate_service_skeleton(t_service* tservice) {
 /**
  * Deserializes a field of any type.
  */
-void t_cpp_generator::generate_deserialize_field(ofstream& out,
+void t_cpp_generator::generate_deserialize_field(ostream& out,
                                                  t_field* tfield,
                                                  string prefix,
                                                  string suffix) {
@@ -3639,7 +3816,7 @@ void t_cpp_generator::generate_deserialize_field(ofstream& out,
       throw "compiler error: cannot serialize void field in a struct: " + name;
       break;
     case t_base_type::TYPE_STRING:
-      if (((t_base_type*)type)->is_binary()) {
+      if (type->is_binary()) {
         out << "readBinary(" << name << ");";
       } else {
         out << "readString(" << name << ");";
@@ -3684,13 +3861,13 @@ void t_cpp_generator::generate_deserialize_field(ofstream& out,
  * buffer for deserialization, and that there is a variable protocol which
  * is a reference to a TProtocol serialization object.
  */
-void t_cpp_generator::generate_deserialize_struct(ofstream& out,
+void t_cpp_generator::generate_deserialize_struct(ostream& out,
                                                   t_struct* tstruct,
                                                   string prefix,
                                                   bool pointer) {
   if (pointer) {
     indent(out) << "if (!" << prefix << ") { " << endl;
-    indent(out) << "  " << prefix << " = boost::shared_ptr<" << type_name(tstruct) << ">(new "
+    indent(out) << "  " << prefix << " = ::std::shared_ptr<" << type_name(tstruct) << ">(new "
                 << type_name(tstruct) << ");" << endl;
     indent(out) << "}" << endl;
     indent(out) << "xfer += " << prefix << "->read(iprot);" << endl;
@@ -3708,7 +3885,7 @@ void t_cpp_generator::generate_deserialize_struct(ofstream& out,
   }
 }
 
-void t_cpp_generator::generate_deserialize_container(ofstream& out, t_type* ttype, string prefix) {
+void t_cpp_generator::generate_deserialize_container(ostream& out, t_type* ttype, string prefix) {
   scope_up(out);
 
   string size = tmp("_size");
@@ -3769,7 +3946,7 @@ void t_cpp_generator::generate_deserialize_container(ofstream& out, t_type* ttyp
 /**
  * Generates code to deserialize a map
  */
-void t_cpp_generator::generate_deserialize_map_element(ofstream& out, t_map* tmap, string prefix) {
+void t_cpp_generator::generate_deserialize_map_element(ostream& out, t_map* tmap, string prefix) {
   string key = tmp("_key");
   string val = tmp("_val");
   t_field fkey(tmap->get_key_type(), key);
@@ -3784,7 +3961,7 @@ void t_cpp_generator::generate_deserialize_map_element(ofstream& out, t_map* tma
   generate_deserialize_field(out, &fval);
 }
 
-void t_cpp_generator::generate_deserialize_set_element(ofstream& out, t_set* tset, string prefix) {
+void t_cpp_generator::generate_deserialize_set_element(ostream& out, t_set* tset, string prefix) {
   string elem = tmp("_elem");
   t_field felem(tset->get_elem_type(), elem);
 
@@ -3795,7 +3972,7 @@ void t_cpp_generator::generate_deserialize_set_element(ofstream& out, t_set* tse
   indent(out) << prefix << ".insert(" << elem << ");" << endl;
 }
 
-void t_cpp_generator::generate_deserialize_list_element(ofstream& out,
+void t_cpp_generator::generate_deserialize_list_element(ostream& out,
                                                         t_list* tlist,
                                                         string prefix,
                                                         bool use_push,
@@ -3818,7 +3995,7 @@ void t_cpp_generator::generate_deserialize_list_element(ofstream& out,
  * @param tfield The field to serialize
  * @param prefix Name to prepend to field name
  */
-void t_cpp_generator::generate_serialize_field(ofstream& out,
+void t_cpp_generator::generate_serialize_field(ostream& out,
                                                t_field* tfield,
                                                string prefix,
                                                string suffix) {
@@ -3846,7 +4023,7 @@ void t_cpp_generator::generate_serialize_field(ofstream& out,
         throw "compiler error: cannot serialize void field in a struct: " + name;
         break;
       case t_base_type::TYPE_STRING:
-        if (((t_base_type*)type)->is_binary()) {
+        if (type->is_binary()) {
           out << "writeBinary(" << name << ");";
         } else {
           out << "writeString(" << name << ");";
@@ -3891,7 +4068,7 @@ void t_cpp_generator::generate_serialize_field(ofstream& out,
  * @param tstruct The struct to serialize
  * @param prefix  String prefix to attach to all fields
  */
-void t_cpp_generator::generate_serialize_struct(ofstream& out,
+void t_cpp_generator::generate_serialize_struct(ostream& out,
                                                 t_struct* tstruct,
                                                 string prefix,
                                                 bool pointer) {
@@ -3908,7 +4085,7 @@ void t_cpp_generator::generate_serialize_struct(ofstream& out,
   }
 }
 
-void t_cpp_generator::generate_serialize_container(ofstream& out, t_type* ttype, string prefix) {
+void t_cpp_generator::generate_serialize_container(ostream& out, t_type* ttype, string prefix) {
   scope_up(out);
 
   if (ttype->is_map()) {
@@ -3954,7 +4131,7 @@ void t_cpp_generator::generate_serialize_container(ofstream& out, t_type* ttype,
  * Serializes the members of a map.
  *
  */
-void t_cpp_generator::generate_serialize_map_element(ofstream& out, t_map* tmap, string iter) {
+void t_cpp_generator::generate_serialize_map_element(ostream& out, t_map* tmap, string iter) {
   t_field kfield(tmap->get_key_type(), iter + "->first");
   generate_serialize_field(out, &kfield, "");
 
@@ -3965,7 +4142,7 @@ void t_cpp_generator::generate_serialize_map_element(ofstream& out, t_map* tmap,
 /**
  * Serializes the members of a set.
  */
-void t_cpp_generator::generate_serialize_set_element(ofstream& out, t_set* tset, string iter) {
+void t_cpp_generator::generate_serialize_set_element(ostream& out, t_set* tset, string iter) {
   t_field efield(tset->get_elem_type(), "(*" + iter + ")");
   generate_serialize_field(out, &efield, "");
 }
@@ -3973,7 +4150,7 @@ void t_cpp_generator::generate_serialize_set_element(ofstream& out, t_set* tset,
 /**
  * Serializes the members of a list.
  */
-void t_cpp_generator::generate_serialize_list_element(ofstream& out, t_list* tlist, string iter) {
+void t_cpp_generator::generate_serialize_list_element(ostream& out, t_list* tlist, string iter) {
   t_field efield(tlist->get_elem_type(), "(*" + iter + ")");
   generate_serialize_field(out, &efield, "");
 }
@@ -4182,7 +4359,7 @@ string t_cpp_generator::declare_field(t_field* tfield,
   }
   result += type_name(tfield->get_type());
   if (is_reference(tfield)) {
-    result = "boost::shared_ptr<" + result + ">";
+    result = "::std::shared_ptr<" + result + ">";
   }
   if (pointer) {
     result += "*";
@@ -4261,13 +4438,13 @@ string t_cpp_generator::function_signature(t_function* tfunction,
       cob_type = (ttype->is_void() ? "()" : ("(" + type_name(ttype) + " const& _return)"));
       if (has_xceptions) {
         exn_cob
-            = ", tcxx::function<void(::apache::thrift::TDelayedException* _throw)> /* exn_cob */";
+            = ", ::std::function<void(::apache::thrift::TDelayedException* _throw)> /* exn_cob */";
       }
     } else {
       throw "UNKNOWN STYLE";
     }
 
-    return "void " + prefix + tfunction->get_name() + "(tcxx::function<void" + cob_type + "> cob"
+    return "void " + prefix + tfunction->get_name() + "(::std::function<void" + cob_type + "> cob"
            + exn_cob + argument_list(arglist, name_params, true) + ")";
   } else {
     throw "UNKNOWN STYLE";
@@ -4371,4 +4548,7 @@ THRIFT_REGISTER_GENERATOR(
     "    templates:       Generate templatized reader/writer methods.\n"
     "    pure_enums:      Generate pure enums instead of wrapper classes.\n"
     "    include_prefix:  Use full include paths in generated files.\n"
-    "    moveable_types:  Generate move constructors and assignment operators.\n")
+    "    moveable_types:  Generate move constructors and assignment operators.\n"
+    "    no_ostream_operators:\n"
+    "                     Omit generation of ostream definitions.\n"
+    "    no_skeleton:     Omits generation of skeleton.\n")

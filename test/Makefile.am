@@ -25,6 +25,11 @@ SUBDIRS += c_glib
 PRECROSS_TARGET += precross-c_glib
 endif
 
+if WITH_CL
+SUBDIRS += cl
+PRECROSS_TARGET += precross-cl
+endif
+
 if WITH_MONO
 SUBDIRS += csharp
 PRECROSS_TARGET += precross-csharp
@@ -72,8 +77,9 @@ if WITH_HAXE
 SUBDIRS += haxe
 endif
 
-if WITH_DOTNETCORE
+if WITH_DOTNET
 SUBDIRS += netcore
+SUBDIRS += netstd
 endif
 
 if WITH_GO
@@ -97,30 +103,45 @@ PRECROSS_TARGET += precross-rs
 endif
 
 #
-# generate html for ThriftTest.thrift
+# generate html for ThriftTest.thrift AND validate it!
 #
+if WITH_NODEJS
 check-local:
 	$(top_builddir)/compiler/cpp/thrift --gen html -r $(top_srcdir)/test/ThriftTest.thrift
+	$(top_builddir)/node_modules/.bin/html-validator --file=gen-html/index.html --verbose
+	$(top_builddir)/node_modules/.bin/html-validator --file=gen-html/ThriftTest.html --verbose
+else
+check-local:
+	$(top_builddir)/compiler/cpp/thrift --gen html -r $(top_srcdir)/test/ThriftTest.thrift
+endif
 
 clean-local:
-	rm -rf $(top_srcdir)/test/gen-html
+	$(RM) -r $(top_srcdir)/test/gen-html/
+	find . -type d -name "__pycache__" | xargs rm -rf
+	find . -type f -name "*.pyc" | xargs rm -f
+
+dist-hook:
+	$(RM) -r $(distdir)/gen-html/
+	find $(distdir) -type d -name "__pycache__" | xargs rm -rf
+	find $(distdir) -type f -name "*.pyc" | xargs rm -f
 
 EXTRA_DIST = \
 	audit \
-	crossrunner \
-	keys \
 	c_glib \
+	cl \
 	cpp \
+	crossrunner \
 	dart \
 	erl \
 	hs \
+	keys \
 	lua \
 	ocaml \
 	perl \
 	php \
 	py \
-	py.twisted \
 	py.tornado \
+	py.twisted \
 	rb \
 	rs \
 	threads \
@@ -130,10 +151,15 @@ EXTRA_DIST = \
 	DebugProtoTest.thrift \
 	DenseLinkingTest.thrift \
 	DocTest.thrift \
+	DoubleConstantsTest.thrift \
+	EnumContainersTest.thrift \
 	EnumTest.thrift \
 	FullCamelTest.thrift \
 	Include.thrift \
+	Int64Test.thrift \
 	JavaBeansTest.thrift \
+	JavaBinaryDefault.thrift \
+	JavaDeepCopyTest.thrift \
 	JavaTypes.thrift \
 	JsDeepConstructorTest.thrift \
 	ManyOptionals.thrift \
@@ -146,6 +172,7 @@ EXTRA_DIST = \
 	StressTest.thrift \
 	ThriftTest.thrift \
 	TypedefTest.thrift \
+	UnsafeTypes.thrift \
 	known_failures_Linux.json \
 	test.py \
 	tests.json \

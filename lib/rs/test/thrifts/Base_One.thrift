@@ -31,7 +31,14 @@ const i32 BoilingPoint = 100
 
 const list<Temperature> Temperatures = [10, 11, 22, 33]
 
+// IMPORTANT: temps should end with ".0" because this tests
+// that we don't have a problem with const float list generation
+const list<double> CommonTemperatures = [300.0, 450.0]
+
 const double MealsPerDay = 2.5;
+
+const string DefaultRecipeName = "Soup-rise of the Day"
+const binary DefaultRecipeBinary = "Soup-rise of the 01010101"
 
 struct Noodle {
   1: string flourType
@@ -46,6 +53,21 @@ const Noodle SpeltNoodle = { "flourType": "spelt", "cookTemp": 110 }
 
 struct MeasuringSpoon {
   1: Size size
+}
+
+struct MeasuringCup {
+  1: double millis
+}
+
+union MeasuringAids {
+  1: MeasuringSpoon spoon
+  2: MeasuringCup cup
+}
+
+struct CookingTemperatures {
+  1: set<double> commonTemperatures
+  2: list<double> usedTemperatures
+  3: map<double, double> fahrenheitToCentigradeConversions
 }
 
 struct Recipe {

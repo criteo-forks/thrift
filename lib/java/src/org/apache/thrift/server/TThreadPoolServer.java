@@ -19,6 +19,8 @@
 
 package org.apache.thrift.server;
 
+import java.util.Arrays;
+import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
@@ -29,13 +31,11 @@ import java.util.concurrent.TimeUnit;
 import org.apache.thrift.TException;
 import org.apache.thrift.TProcessor;
 import org.apache.thrift.protocol.TProtocol;
-import org.apache.thrift.transport.TSaslTransportException;
 import org.apache.thrift.transport.TServerTransport;
 import org.apache.thrift.transport.TTransport;
 import org.apache.thrift.transport.TTransportException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 
 /**
  * Server which uses Java's built in ThreadPool management to spawn off
@@ -72,6 +72,11 @@ public class TThreadPoolServer extends TServer {
 
     public Args stopTimeoutVal(int n) {
       stopTimeoutVal = n;
+      return this;
+    }
+
+    public Args stopTimeoutUnit(TimeUnit tu) {
+      stopTimeoutUnit = tu;
       return this;
     }
 
@@ -136,26 +141,44 @@ public class TThreadPoolServer extends TServer {
     return new ThreadPoolExecutor(args.minWorkerThreads,
                                   args.maxWorkerThreads,
                                   args.stopTimeoutVal,
-                                  TimeUnit.SECONDS,
+                                  args.stopTimeoutUnit,
                                   executorQueue);
   }
 
-
-  public void serve() {
-    try {
+  protected ExecutorService getExecutorService() {
+    return executorService_;
+  }
+  
+  protected boolean preServe() {
+  	try {
       serverTransport_.listen();
     } catch (TTransportException ttx) {
       LOGGER.error("Error occurred during listening.", ttx);
-      return;
+      return false;
     }
 
     // Run the preServe event
     if (eventHandler_ != null) {
       eventHandler_.preServe();
     }
-
     stopped_ = false;
     setServing(true);
+    
+    return true;
+  }
+
+  public void serve() {
+  	if (!preServe()) {
+  		return;
+  	}
+
+  	execute();
+  	waitForShutdown();
+    
+    setServing(false);
+  }
+  
+  protected void execute() {
     int failureCount = 0;
     while (!stopped_) {
       try {
@@ -208,8 +231,10 @@ public class TThreadPoolServer extends TServer {
         }
       }
     }
-
-    executorService_.shutdown();
+  }
+  
+  protected void waitForShutdown() {
+  	executorService_.shutdown();
 
     // Loop until awaitTermination finally does return without a interrupted
     // exception. If we don't do this, then we'll shut down prematurely. We want
@@ -227,7 +252,6 @@ public class TThreadPoolServer extends TServer {
         now = newnow;
       }
     }
-    setServing(false);
   }
 
   public void stop() {
@@ -269,7 +293,7 @@ public class TThreadPoolServer extends TServer {
         inputTransport = inputTransportFactory_.getTransport(client_);
         outputTransport = outputTransportFactory_.getTransport(client_);
         inputProtocol = inputProtocolFactory_.getProtocol(inputTransport);
-        outputProtocol = outputProtocolFactory_.getProtocol(outputTransport);	  
+        outputProtocol = outputProtocolFactory_.getProtocol(outputTransport);
 
         eventHandler = getEventHandler();
         if (eventHandler != null) {
@@ -283,18 +307,19 @@ public class TThreadPoolServer extends TServer {
               eventHandler.processContext(connectionContext, inputTransport, outputTransport);
             }
 
-            if(stopped_ || !processor.process(inputProtocol, outputProtocol)) {
+            if (stopped_) {
               break;
             }
+            processor.process(inputProtocol, outputProtocol);
         }
-      } catch (TSaslTransportException ttx) {
-        // Something thats not SASL was in the stream, continue silently 
-      } catch (TTransportException ttx) {
-        // Assume the client died and continue silently
-      } catch (TException tx) {
-        LOGGER.error("Thrift error occurred during processing of message.", tx);
       } catch (Exception x) {
-        LOGGER.error("Error occurred during processing of message.", x);
+        // We'll usually receive RuntimeException types here
+        // Need to unwrap to ascertain real causing exception before we choose to ignore
+        // Ignore err-logging all transport-level/type exceptions
+        if (!isIgnorableException(x)) {
+          // Log the exception at error level and continue
+          LOGGER.error((x instanceof TException? "Thrift " : "") + "Error occurred during processing of message.", x);
+        }
       } finally {
         if (eventHandler != null) {
           eventHandler.deleteContext(connectionContext, inputProtocol, outputProtocol);
@@ -309,6 +334,26 @@ public class TThreadPoolServer extends TServer {
           client_.close();
         }
       }
+    }
+
+    private boolean isIgnorableException(Exception x) {
+      TTransportException tTransportException = null;
+
+      if (x instanceof TTransportException) {
+        tTransportException = (TTransportException)x;
+      }
+      else if (x.getCause() instanceof TTransportException) {
+        tTransportException = (TTransportException)x.getCause();
+      }
+
+      if (tTransportException != null) {
+        switch(tTransportException.getType()) {
+          case TTransportException.END_OF_FILE:
+          case TTransportException.TIMED_OUT:
+            return true;
+        }
+      }
+      return false;
     }
   }
 }

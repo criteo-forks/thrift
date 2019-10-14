@@ -19,5 +19,4 @@ for LIB in $BUILD_LIBS; do
 done
 $MAKEPROG -j3
 cpack
-ctest -VV 
-# was: -E "(concurrency_test|processor_test)"
+ctest -VV

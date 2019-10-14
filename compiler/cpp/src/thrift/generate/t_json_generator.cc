@@ -68,28 +68,28 @@ public:
     out_dir_base_ = "gen-json";
   }
 
-  virtual ~t_json_generator() {}
+  ~t_json_generator() override = default;
 
   /**
   * Init and close methods
   */
 
-  void init_generator();
-  void close_generator();
+  void init_generator() override;
+  void close_generator() override;
 
-  void generate_typedef(t_typedef* ttypedef);
-  void generate_enum(t_enum* tenum);
-  void generate_program();
+  void generate_typedef(t_typedef* ttypedef) override;
+  void generate_enum(t_enum* tenum) override;
+  void generate_program() override;
   void generate_function(t_function* tfunc);
   void generate_field(t_field* field);
 
-  void generate_service(t_service* tservice);
-  void generate_struct(t_struct* tstruct);
+  void generate_service(t_service* tservice) override;
+  void generate_struct(t_struct* tstruct) override;
 
 private:
   bool should_merge_includes_;
 
-  std::ofstream f_json_;
+  ofstream_with_content_based_conditional_update f_json_;
   std::stack<bool> comma_needed_;
 
   template <typename T>
@@ -147,8 +147,8 @@ void t_json_generator::init_generator() {
 
 string t_json_generator::escape_json_string(const string& input) {
   std::ostringstream ss;
-  for (std::string::const_iterator iter = input.begin(); iter != input.end(); iter++) {
-    switch (*iter) {
+  for (char iter : input) {
+    switch (iter) {
     case '\\':
       ss << "\\\\";
       break;
@@ -174,7 +174,7 @@ string t_json_generator::escape_json_string(const string& input) {
       ss << "\\t";
       break;
     default:
-      ss << *iter;
+      ss << iter;
       break;
     }
   }
@@ -264,6 +264,15 @@ void t_json_generator::write_type_spec(t_type* ttype) {
 
   write_string(get_type_name(ttype));
 
+  if (ttype->annotations_.size() > 0) {
+    write_key_and("annotations");
+    start_object();
+    for (auto & annotation : ttype->annotations_) {
+      write_key_and_string(annotation.first, annotation.second);
+    }
+    end_object();
+  }
+
   if (ttype->is_struct() || ttype->is_xception()) {
     write_key_and_string("class", get_qualified_name(ttype));
   } else if (ttype->is_map()) {
@@ -273,8 +282,12 @@ void t_json_generator::write_type_spec(t_type* ttype) {
     write_key_and_string("valueTypeId", get_type_name(vtype));
     write_type_spec_object("keyType", ktype);
     write_type_spec_object("valueType", vtype);
-  } else if (ttype->is_list() || ttype->is_set()) {
+  } else if (ttype->is_list()) {
     t_type* etype = ((t_list*)ttype)->get_elem_type();
+    write_key_and_string("elemTypeId", get_type_name(etype));
+    write_type_spec_object("elemType", etype);
+  } else if (ttype->is_set()) {
+    t_type* etype = ((t_set*)ttype)->get_elem_type();
     write_key_and_string("elemTypeId", get_type_name(etype));
     write_type_spec_object("elemType", etype);
   }
@@ -441,6 +454,14 @@ void t_json_generator::generate_typedef(t_typedef* ttypedef) {
   if (ttypedef->has_doc()) {
     write_key_and_string("doc", ttypedef->get_doc());
   }
+  if (ttypedef->annotations_.size() > 0) {
+    write_key_and("annotations");
+    start_object();
+    for (auto & annotation : ttypedef->annotations_) {
+      write_key_and_string(annotation.first, annotation.second);
+    }
+    end_object();
+  }
   end_object();
 }
 
@@ -489,8 +510,8 @@ void t_json_generator::write_const_value(t_const_value* value, bool should_force
 
   case t_const_value::CV_MAP: {
     start_object(NO_INDENT);
-    std::map<t_const_value*, t_const_value*> map = value->get_map();
-    std::map<t_const_value*, t_const_value*>::iterator mit;
+    std::map<t_const_value*, t_const_value*, t_const_value::value_compare> map = value->get_map();
+    std::map<t_const_value*, t_const_value*, t_const_value::value_compare>::iterator mit;
     for (mit = map.begin(); mit != map.end(); ++mit) {
       write_comma_if_needed();
       f_json_ << indent();
@@ -540,6 +561,15 @@ void t_json_generator::generate_enum(t_enum* tenum) {
     write_key_and_string("doc", tenum->get_doc());
   }
 
+  if (tenum->annotations_.size() > 0) {
+      write_key_and("annotations");
+      start_object();
+      for (auto & annotation : tenum->annotations_) {
+        write_key_and_string(annotation.first, annotation.second);
+      }
+      end_object();
+  }
+
   write_key_and("members");
   start_array();
   vector<t_enum_value*> values = tenum->get_constants();
@@ -568,6 +598,15 @@ void t_json_generator::generate_struct(t_struct* tstruct) {
 
   if (tstruct->has_doc()) {
     write_key_and_string("doc", tstruct->get_doc());
+  }
+
+  if (tstruct->annotations_.size() > 0) {
+    write_key_and("annotations");
+    start_object();
+    for (auto & annotation : tstruct->annotations_) {
+      write_key_and_string(annotation.first, annotation.second);
+    }
+    end_object();
   }
 
   write_key_and_bool("isException", tstruct->is_xception());
@@ -601,6 +640,15 @@ void t_json_generator::generate_service(t_service* tservice) {
     write_key_and_string("doc", tservice->get_doc());
   }
 
+  if (tservice->annotations_.size() > 0) {
+    write_key_and("annotations");
+    start_object();
+    for (auto & annotation : tservice->annotations_) {
+      write_key_and_string(annotation.first, annotation.second);
+    }
+    end_object();
+  }
+
   write_key_and("functions");
   start_array();
   vector<t_function*> functions = tservice->get_functions();
@@ -627,6 +675,15 @@ void t_json_generator::generate_function(t_function* tfunc) {
 
   if (tfunc->has_doc()) {
     write_key_and_string("doc", tfunc->get_doc());
+  }
+
+  if (tfunc->annotations_.size() > 0) {
+    write_key_and("annotations");
+    start_object();
+    for (auto & annotation : tfunc->annotations_) {
+      write_key_and_string(annotation.first, annotation.second);
+    }
+    end_object();
   }
 
   write_key_and("arguments");
@@ -664,6 +721,15 @@ void t_json_generator::generate_field(t_field* field) {
 
   if (field->has_doc()) {
     write_key_and_string("doc", field->get_doc());
+  }
+
+  if (field->annotations_.size() > 0) {
+    write_key_and("annotations");
+    start_object();
+    for (auto & annotation : field->annotations_) {
+      write_key_and_string(annotation.first, annotation.second);
+    }
+    end_object();
   }
 
   write_key_and("required");

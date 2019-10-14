@@ -84,23 +84,31 @@ if NET_2_0
 export CSC_DEFINES = -d:NET_2_0
 endif
 
-all-local: Thrift.dll
+all-local: Thrift.dll Thrift.45.dll
 
 Thrift.dll: $(THRIFTCODE)
 	$(CSC) $(CSC_DEFINES) -out:$@ -target:library -reference:System.Web $(THRIFTCODE)
 
-clean-local:
-	$(RM) Thrift.dll
+Thrift.45.dll: $(THRIFTCODE)
+	$(CSC) $(CSC_DEFINES) -out:$@ -target:library -reference:System.Web $(THRIFTCODE)
+
+CLEANFILES = \
+	Thrift.dll \
+	Thrift.45.dll
+
+DISTCLEANFILES = \
+	Makefile.in
 
 EXTRA_DIST = \
-             $(THRIFTCODE) \
-             ThriftMSBuildTask \
-             src/Thrift.csproj \
-             src/Thrift.45.csproj \
-             src/Thrift.sln \
-             src/Transport/TSilverlightSocket.cs \
-             src/Transport/THttpTaskAsyncHandler.cs \
-             src/TAsyncProcessor.cs \
-             test \
-             coding_standards.md \
-             README.md
+	$(THRIFTCODE) \
+	ThriftMSBuildTask \
+	src/Thrift.csproj \
+	src/Thrift.45.csproj \
+	src/Thrift.sln \
+	src/Net35/ExtensionsNet35.cs \
+	src/Transport/TSilverlightSocket.cs \
+	src/Transport/THttpTaskAsyncHandler.cs \
+	src/TAsyncProcessor.cs \
+	test \
+	coding_standards.md \
+	README.md

@@ -15,15 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Types required to implement a Thrift server.
+//! Types used to implement a Thrift server.
 
-use ::protocol::{TInputProtocol, TOutputProtocol};
+use protocol::{TInputProtocol, TMessageIdentifier, TMessageType, TOutputProtocol};
+use {ApplicationError, ApplicationErrorKind};
 
-mod simple;
 mod multiplexed;
+mod threaded;
 
-pub use self::simple::TSimpleServer;
 pub use self::multiplexed::TMultiplexedProcessor;
+pub use self::threaded::TServer;
 
 /// Handles incoming Thrift messages and dispatches them to the user-defined
 /// handler functions.
@@ -38,7 +39,6 @@ pub use self::multiplexed::TMultiplexedProcessor;
 /// a Thrift service `SimpleService`.
 ///
 /// ```no_run
-/// use thrift;
 /// use thrift::protocol::{TInputProtocol, TOutputProtocol};
 /// use thrift::server::TProcessor;
 ///
@@ -56,14 +56,14 @@ pub use self::multiplexed::TMultiplexedProcessor;
 ///
 /// // `TProcessor` implementation for `SimpleService`
 /// impl TProcessor for SimpleServiceSyncProcessor {
-///     fn process(&mut self, i: &mut TInputProtocol, o: &mut TOutputProtocol) -> thrift::Result<()> {
+///     fn process(&self, i: &mut TInputProtocol, o: &mut TOutputProtocol) -> thrift::Result<()> {
 ///         unimplemented!();
 ///     }
 /// }
 ///
 /// // service functions for SimpleService
 /// trait SimpleServiceSyncHandler {
-///     fn service_call(&mut self) -> thrift::Result<()>;
+///     fn service_call(&self) -> thrift::Result<()>;
 /// }
 ///
 /// //
@@ -73,7 +73,7 @@ pub use self::multiplexed::TMultiplexedProcessor;
 /// // define a handler that will be invoked when `service_call` is received
 /// struct SimpleServiceHandlerImpl;
 /// impl SimpleServiceSyncHandler for SimpleServiceHandlerImpl {
-///     fn service_call(&mut self) -> thrift::Result<()> {
+///     fn service_call(&self) -> thrift::Result<()> {
 ///         unimplemented!();
 ///     }
 /// }
@@ -82,7 +82,7 @@ pub use self::multiplexed::TMultiplexedProcessor;
 /// let processor = SimpleServiceSyncProcessor::new(SimpleServiceHandlerImpl {});
 ///
 /// // at this point you can pass the processor to the server
-/// // let server = TSimpleServer::new(..., processor);
+/// // let server = TServer::new(..., processor);
 /// ```
 pub trait TProcessor {
     /// Process a Thrift service call.
@@ -91,5 +91,33 @@ pub trait TProcessor {
     /// the response to `o`.
     ///
     /// Returns `()` if the handler was executed; `Err` otherwise.
-    fn process(&mut self, i: &mut TInputProtocol, o: &mut TOutputProtocol) -> ::Result<()>;
+    fn process(&self, i: &mut dyn TInputProtocol, o: &mut dyn TOutputProtocol) -> ::Result<()>;
+}
+
+/// Convenience function used in generated `TProcessor` implementations to
+/// return an `ApplicationError` if thrift message processing failed.
+pub fn handle_process_result(
+    msg_ident: &TMessageIdentifier,
+    res: ::Result<()>,
+    o_prot: &mut dyn TOutputProtocol,
+) -> ::Result<()> {
+    if let Err(e) = res {
+        let e = match e {
+            ::Error::Application(a) => a,
+            _ => ApplicationError::new(ApplicationErrorKind::Unknown, format!("{:?}", e)),
+        };
+
+        let ident = TMessageIdentifier::new(
+            msg_ident.name.clone(),
+            TMessageType::Exception,
+            msg_ident.sequence_number,
+        );
+
+        o_prot.write_message_begin(&ident)?;
+        ::Error::write_application_error_to_out_protocol(&e, o_prot)?;
+        o_prot.write_message_end()?;
+        o_prot.flush()
+    } else {
+        Ok(())
+    }
 }

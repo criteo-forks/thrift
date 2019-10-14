@@ -17,8 +17,6 @@
 # under the License.
 #
 
-THRIFT = $(top_builddir)/compiler/cpp/thrift
-
 stubs: ../ThriftTest.thrift
 	$(THRIFT) -I ./thrifts -out src --gen rs ../ThriftTest.thrift
 
@@ -36,7 +34,7 @@ clean-local:
 
 EXTRA_DIST = \
 	Cargo.toml \
-        src/lib.rs \
+	src/lib.rs \
 	src/bin/test_server.rs \
 	src/bin/test_client.rs
 

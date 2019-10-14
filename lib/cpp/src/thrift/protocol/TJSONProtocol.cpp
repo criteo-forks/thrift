@@ -19,9 +19,7 @@
 
 #include <thrift/protocol/TJSONProtocol.h>
 
-#include <boost/lexical_cast.hpp>
 #include <boost/locale.hpp>
-#include <boost/math/special_functions/fpclassify.hpp>
 
 #include <cmath>
 #include <limits>
@@ -31,6 +29,7 @@
 
 #include <thrift/protocol/TBase64Utils.h>
 #include <thrift/transport/TTransportException.h>
+#include <thrift/TToString.h>
 
 using namespace apache::thrift::transport;
 
@@ -48,7 +47,6 @@ static const uint8_t kJSONPairSeparator = ':';
 static const uint8_t kJSONElemSeparator = ',';
 static const uint8_t kJSONBackslash = '\\';
 static const uint8_t kJSONStringDelimiter = '"';
-static const uint8_t kJSONZeroChar = '0';
 static const uint8_t kJSONEscapeChar = 'u';
 
 static const std::string kJSONEscapePrefix("\\u00");
@@ -303,9 +301,9 @@ static bool isLowSurrogate(uint16_t val) {
 class TJSONContext {
 
 public:
-  TJSONContext(){};
+  TJSONContext() = default;
 
-  virtual ~TJSONContext(){};
+  virtual ~TJSONContext() = default;
 
   /**
    * Write context data to the transport. Default is to do nothing.
@@ -336,7 +334,7 @@ class JSONPairContext : public TJSONContext {
 public:
   JSONPairContext() : first_(true), colon_(true) {}
 
-  uint32_t write(TTransport& trans) {
+  uint32_t write(TTransport& trans) override {
     if (first_) {
       first_ = false;
       colon_ = true;
@@ -348,7 +346,7 @@ public:
     }
   }
 
-  uint32_t read(TJSONProtocol::LookaheadReader& reader) {
+  uint32_t read(TJSONProtocol::LookaheadReader& reader) override {
     if (first_) {
       first_ = false;
       colon_ = true;
@@ -361,7 +359,7 @@ public:
   }
 
   // Numbers must be turned into strings if they are the key part of a pair
-  virtual bool escapeNum() { return colon_; }
+  bool escapeNum() override { return colon_; }
 
 private:
   bool first_;
@@ -374,7 +372,7 @@ class JSONListContext : public TJSONContext {
 public:
   JSONListContext() : first_(true) {}
 
-  uint32_t write(TTransport& trans) {
+  uint32_t write(TTransport& trans) override {
     if (first_) {
       first_ = false;
       return 0;
@@ -384,7 +382,7 @@ public:
     }
   }
 
-  uint32_t read(TJSONProtocol::LookaheadReader& reader) {
+  uint32_t read(TJSONProtocol::LookaheadReader& reader) override {
     if (first_) {
       first_ = false;
       return 0;
@@ -397,17 +395,16 @@ private:
   bool first_;
 };
 
-TJSONProtocol::TJSONProtocol(boost::shared_ptr<TTransport> ptrans)
+TJSONProtocol::TJSONProtocol(std::shared_ptr<TTransport> ptrans)
   : TVirtualProtocol<TJSONProtocol>(ptrans),
     trans_(ptrans.get()),
     context_(new TJSONContext()),
     reader_(*ptrans) {
 }
 
-TJSONProtocol::~TJSONProtocol() {
-}
+TJSONProtocol::~TJSONProtocol() = default;
 
-void TJSONProtocol::pushContext(boost::shared_ptr<TJSONContext> c) {
+void TJSONProtocol::pushContext(std::shared_ptr<TJSONContext> c) {
   contexts_.push(context_);
   context_ = c;
 }
@@ -477,10 +474,10 @@ uint32_t TJSONProtocol::writeJSONBase64(const std::string& str) {
   result += 2; // For quotes
   trans_->write(&kJSONStringDelimiter, 1);
   uint8_t b[4];
-  const uint8_t* bytes = (const uint8_t*)str.c_str();
+  const auto* bytes = (const uint8_t*)str.c_str();
   if (str.length() > (std::numeric_limits<uint32_t>::max)())
     throw TProtocolException(TProtocolException::SIZE_LIMIT);
-  uint32_t len = static_cast<uint32_t>(str.length());
+  auto len = static_cast<uint32_t>(str.length());
   while (len >= 3) {
     // Encode 3 bytes at a time
     base64_encode(bytes, 3, b);
@@ -503,7 +500,7 @@ uint32_t TJSONProtocol::writeJSONBase64(const std::string& str) {
 template <typename NumberType>
 uint32_t TJSONProtocol::writeJSONInteger(NumberType num) {
   uint32_t result = context_->write(*trans_);
-  std::string val(boost::lexical_cast<std::string>(num));
+  std::string val(to_string(num));
   bool escapeNum = context_->escapeNum();
   if (escapeNum) {
     trans_->write(&kJSONStringDelimiter, 1);
@@ -538,9 +535,9 @@ uint32_t TJSONProtocol::writeJSONDouble(double num) {
   std::string val;
 
   bool special = false;
-  switch (boost::math::fpclassify(num)) {
+  switch (std::fpclassify(num)) {
   case FP_INFINITE:
-    if (boost::math::signbit(num)) {
+    if (std::signbit(num)) {
       val = kThriftNegativeInfinity;
     } else {
       val = kThriftInfinity;
@@ -575,7 +572,7 @@ uint32_t TJSONProtocol::writeJSONDouble(double num) {
 uint32_t TJSONProtocol::writeJSONObjectStart() {
   uint32_t result = context_->write(*trans_);
   trans_->write(&kJSONObjectStart, 1);
-  pushContext(boost::shared_ptr<TJSONContext>(new JSONPairContext()));
+  pushContext(std::shared_ptr<TJSONContext>(new JSONPairContext()));
   return result + 1;
 }
 
@@ -588,7 +585,7 @@ uint32_t TJSONProtocol::writeJSONObjectEnd() {
 uint32_t TJSONProtocol::writeJSONArrayStart() {
   uint32_t result = context_->write(*trans_);
   trans_->write(&kJSONArrayStart, 1);
-  pushContext(boost::shared_ptr<TJSONContext>(new JSONListContext()));
+  pushContext(std::shared_ptr<TJSONContext>(new JSONListContext()));
   return result + 1;
 }
 
@@ -684,7 +681,7 @@ uint32_t TJSONProtocol::writeBool(const bool value) {
 }
 
 uint32_t TJSONProtocol::writeByte(const int8_t byte) {
-  // writeByte() must be handled specially because boost::lexical cast sees
+  // writeByte() must be handled specially because to_string sees
   // int8_t as a text type instead of an integer type
   return writeJSONInteger((int16_t)byte);
 }
@@ -772,7 +769,7 @@ uint32_t TJSONProtocol::readJSONString(std::string& str, bool skipContext) {
         continue;
       } else {
         size_t pos = kEscapeChars.find(ch);
-        if (pos == std::string::npos) {
+        if (pos == kEscapeChars.npos) {
           throw TProtocolException(TProtocolException::INVALID_DATA,
                                    "Expected control char, got '" + std::string((const char*)&ch, 1)
                                    + "'.");
@@ -798,10 +795,10 @@ uint32_t TJSONProtocol::readJSONString(std::string& str, bool skipContext) {
 uint32_t TJSONProtocol::readJSONBase64(std::string& str) {
   std::string tmp;
   uint32_t result = readJSONString(tmp);
-  uint8_t* b = (uint8_t*)tmp.c_str();
+  auto* b = (uint8_t*)tmp.c_str();
   if (tmp.length() > (std::numeric_limits<uint32_t>::max)())
     throw TProtocolException(TProtocolException::SIZE_LIMIT);
-  uint32_t len = static_cast<uint32_t>(tmp.length());
+  auto len = static_cast<uint32_t>(tmp.length());
   str.clear();
   // Ignore padding
   if (len >= 2)  {
@@ -842,6 +839,19 @@ uint32_t TJSONProtocol::readJSONNumericChars(std::string& str) {
   return result;
 }
 
+namespace {
+template <typename T>
+T fromString(const std::string& s) {
+  T t;
+  std::istringstream str(s);
+  str.imbue(std::locale::classic());
+  str >> t;
+  if (str.bad() || !str.eof())
+    throw std::runtime_error(s);
+  return t;
+}
+}
+
 // Reads a sequence of characters and assembles them into a number,
 // returning them via num
 template <typename NumberType>
@@ -853,27 +863,15 @@ uint32_t TJSONProtocol::readJSONInteger(NumberType& num) {
   std::string str;
   result += readJSONNumericChars(str);
   try {
-    num = boost::lexical_cast<NumberType>(str);
-  } catch (boost::bad_lexical_cast e) {
+    num = fromString<NumberType>(str);
+  } catch (const std::runtime_error&) {
     throw TProtocolException(TProtocolException::INVALID_DATA,
-                                 "Expected numeric value; got \"" + str + "\"");
+                             "Expected numeric value; got \"" + str + "\"");
   }
   if (context_->escapeNum()) {
     result += readJSONSyntaxChar(kJSONStringDelimiter);
   }
   return result;
-}
-
-namespace {
-double stringToDouble(const std::string& s) {
-  double d;
-  std::istringstream str(s);
-  str.imbue(std::locale::classic());
-  str >> d;
-  if (str.bad() || !str.eof())
-    throw std::runtime_error(s);
-  return d;
-}
 }
 
 // Reads a JSON number or string and interprets it as a double.
@@ -896,8 +894,8 @@ uint32_t TJSONProtocol::readJSONDouble(double& num) {
                                      "Numeric data unexpectedly quoted");
       }
       try {
-        num = stringToDouble(str);
-      } catch (std::runtime_error e) {
+        num = fromString<double>(str);
+      } catch (const std::runtime_error&) {
         throw TProtocolException(TProtocolException::INVALID_DATA,
                                      "Expected numeric value; got \"" + str + "\"");
       }
@@ -909,8 +907,8 @@ uint32_t TJSONProtocol::readJSONDouble(double& num) {
     }
     result += readJSONNumericChars(str);
     try {
-      num = stringToDouble(str);
-    } catch (std::runtime_error e) {
+      num = fromString<double>(str);
+    } catch (const std::runtime_error&) {
       throw TProtocolException(TProtocolException::INVALID_DATA,
                                    "Expected numeric value; got \"" + str + "\"");
     }
@@ -921,7 +919,7 @@ uint32_t TJSONProtocol::readJSONDouble(double& num) {
 uint32_t TJSONProtocol::readJSONObjectStart() {
   uint32_t result = context_->read(reader_);
   result += readJSONSyntaxChar(kJSONObjectStart);
-  pushContext(boost::shared_ptr<TJSONContext>(new JSONPairContext()));
+  pushContext(std::shared_ptr<TJSONContext>(new JSONPairContext()));
   return result;
 }
 
@@ -934,7 +932,7 @@ uint32_t TJSONProtocol::readJSONObjectEnd() {
 uint32_t TJSONProtocol::readJSONArrayStart() {
   uint32_t result = context_->read(reader_);
   result += readJSONSyntaxChar(kJSONArrayStart);
-  pushContext(boost::shared_ptr<TJSONContext>(new JSONListContext()));
+  pushContext(std::shared_ptr<TJSONContext>(new JSONListContext()));
   return result;
 }
 
@@ -948,7 +946,7 @@ uint32_t TJSONProtocol::readMessageBegin(std::string& name,
                                          TMessageType& messageType,
                                          int32_t& seqid) {
   uint32_t result = readJSONArrayStart();
-  uint64_t tmpVal = 0;
+  int64_t tmpVal = 0;
   result += readJSONInteger(tmpVal);
   if (tmpVal != kThriftVersion1) {
     throw TProtocolException(TProtocolException::BAD_VERSION, "Message contained bad version.");
@@ -957,8 +955,9 @@ uint32_t TJSONProtocol::readMessageBegin(std::string& name,
   result += readJSONInteger(tmpVal);
   messageType = (TMessageType)tmpVal;
   result += readJSONInteger(tmpVal);
-  if (tmpVal > static_cast<uint64_t>((std::numeric_limits<int32_t>::max)()))
-    throw TProtocolException(TProtocolException::SIZE_LIMIT);
+  if (tmpVal > (std::numeric_limits<int32_t>::max)() ||
+      tmpVal < (std::numeric_limits<int32_t>::min)())
+    throw TProtocolException(TProtocolException::INVALID_DATA, "sequence id is not int32_t");
   seqid = static_cast<int32_t>(tmpVal);
   return result;
 }
@@ -1064,7 +1063,7 @@ uint32_t TJSONProtocol::readBool(bool& value) {
 // readByte() must be handled properly because boost::lexical cast sees int8_t
 // as a text type instead of an integer type
 uint32_t TJSONProtocol::readByte(int8_t& byte) {
-  int16_t tmp = (int16_t)byte;
+  auto tmp = (int16_t)byte;
   uint32_t result = readJSONInteger(tmp);
   assert(tmp < 256);
   byte = (int8_t)tmp;

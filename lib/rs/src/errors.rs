@@ -19,9 +19,9 @@ use std::convert::{From, Into};
 use std::error::Error as StdError;
 use std::fmt::{Debug, Display, Formatter};
 use std::{error, fmt, io, string};
-use try_from::TryFrom;
+use std::convert::TryFrom;
 
-use ::protocol::{TFieldIdentifier, TInputProtocol, TOutputProtocol, TStructIdentifier, TType};
+use protocol::{TFieldIdentifier, TInputProtocol, TOutputProtocol, TStructIdentifier, TType};
 
 // FIXME: should all my error structs impl error::Error as well?
 // FIXME: should all fields in TransportError, ProtocolError and ApplicationError be optional?
@@ -58,7 +58,6 @@ use ::protocol::{TFieldIdentifier, TInputProtocol, TOutputProtocol, TStructIdent
 /// Create a `TransportError`.
 ///
 /// ```
-/// use thrift;
 /// use thrift::{TransportError, TransportErrorKind};
 ///
 /// // explicit
@@ -104,7 +103,6 @@ use ::protocol::{TFieldIdentifier, TInputProtocol, TOutputProtocol, TStructIdent
 /// Create an error from a string.
 ///
 /// ```
-/// use thrift;
 /// use thrift::{ApplicationError, ApplicationErrorKind};
 ///
 /// // we just use `From::from` to convert a `String` into a `thrift::Error`
@@ -134,7 +132,6 @@ use ::protocol::{TFieldIdentifier, TInputProtocol, TOutputProtocol, TStructIdent
 /// ```
 ///
 /// ```
-/// use std::convert::From;
 /// use std::error::Error;
 /// use std::fmt;
 /// use std::fmt::{Display, Formatter};
@@ -191,15 +188,16 @@ pub enum Error {
     /// functions are automatically returned as an `ApplicationError`.
     Application(ApplicationError),
     /// IDL-defined exception structs.
-    User(Box<error::Error + Sync + Send>),
+    User(Box<dyn error::Error + Sync + Send>),
 }
 
 impl Error {
     /// Create an `ApplicationError` from its wire representation.
     ///
     /// Application code **should never** call this method directly.
-    pub fn read_application_error_from_in_protocol(i: &mut TInputProtocol)
-                                                   -> ::Result<ApplicationError> {
+    pub fn read_application_error_from_in_protocol(
+        i: &mut dyn TInputProtocol,
+    ) -> ::Result<ApplicationError> {
         let mut message = "general remote error".to_owned();
         let mut kind = ApplicationErrorKind::Unknown;
 
@@ -212,7 +210,9 @@ impl Error {
                 break;
             }
 
-            let id = field_ident.id.expect("sender should always specify id for non-STOP field");
+            let id = field_ident
+                .id
+                .expect("sender should always specify id for non-STOP field");
 
             match id {
                 1 => {
@@ -245,10 +245,13 @@ impl Error {
     /// it to the remote.
     ///
     /// Application code **should never** call this method directly.
-    pub fn write_application_error_to_out_protocol(e: &ApplicationError,
-                                                   o: &mut TOutputProtocol)
-                                                   -> ::Result<()> {
-        o.write_struct_begin(&TStructIdentifier { name: "TApplicationException".to_owned() })?;
+    pub fn write_application_error_to_out_protocol(
+        e: &ApplicationError,
+        o: &mut dyn TOutputProtocol,
+    ) -> ::Result<()> {
+        o.write_struct_begin(&TStructIdentifier {
+            name: "TApplicationException".to_owned(),
+        })?;
 
         let message_field = TFieldIdentifier::new("message", TType::String, 1);
         let type_field = TFieldIdentifier::new("type", TType::I32, 2);
@@ -344,7 +347,7 @@ pub fn new_transport_error<S: Into<String>>(kind: TransportErrorKind, message: S
 }
 
 /// Information about I/O errors.
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct TransportError {
     /// I/O error variant.
     ///
@@ -407,8 +410,8 @@ impl Display for TransportError {
 }
 
 impl TryFrom<i32> for TransportErrorKind {
-    type Err = Error;
-    fn try_from(from: i32) -> Result<Self, Self::Err> {
+    type Error = Error;
+    fn try_from(from: i32) -> Result<Self, Self::Error> {
         match from {
             0 => Ok(TransportErrorKind::Unknown),
             1 => Ok(TransportErrorKind::NotOpen),
@@ -417,12 +420,10 @@ impl TryFrom<i32> for TransportErrorKind {
             4 => Ok(TransportErrorKind::EndOfFile),
             5 => Ok(TransportErrorKind::NegativeSize),
             6 => Ok(TransportErrorKind::SizeLimit),
-            _ => {
-                Err(Error::Protocol(ProtocolError {
-                    kind: ProtocolErrorKind::Unknown,
-                    message: format!("cannot convert {} to TransportErrorKind", from),
-                }))
-            }
+            _ => Err(Error::Protocol(ProtocolError {
+                kind: ProtocolErrorKind::Unknown,
+                message: format!("cannot convert {} to TransportErrorKind", from),
+            })),
         }
     }
 }
@@ -430,32 +431,24 @@ impl TryFrom<i32> for TransportErrorKind {
 impl From<io::Error> for Error {
     fn from(err: io::Error) -> Self {
         match err.kind() {
-            io::ErrorKind::ConnectionReset |
-            io::ErrorKind::ConnectionRefused |
-            io::ErrorKind::NotConnected => {
-                Error::Transport(TransportError {
-                    kind: TransportErrorKind::NotOpen,
-                    message: err.description().to_owned(),
-                })
-            }
-            io::ErrorKind::AlreadyExists => {
-                Error::Transport(TransportError {
-                    kind: TransportErrorKind::AlreadyOpen,
-                    message: err.description().to_owned(),
-                })
-            }
-            io::ErrorKind::TimedOut => {
-                Error::Transport(TransportError {
-                    kind: TransportErrorKind::TimedOut,
-                    message: err.description().to_owned(),
-                })
-            }
-            io::ErrorKind::UnexpectedEof => {
-                Error::Transport(TransportError {
-                    kind: TransportErrorKind::EndOfFile,
-                    message: err.description().to_owned(),
-                })
-            }
+            io::ErrorKind::ConnectionReset
+            | io::ErrorKind::ConnectionRefused
+            | io::ErrorKind::NotConnected => Error::Transport(TransportError {
+                kind: TransportErrorKind::NotOpen,
+                message: err.description().to_owned(),
+            }),
+            io::ErrorKind::AlreadyExists => Error::Transport(TransportError {
+                kind: TransportErrorKind::AlreadyOpen,
+                message: err.description().to_owned(),
+            }),
+            io::ErrorKind::TimedOut => Error::Transport(TransportError {
+                kind: TransportErrorKind::TimedOut,
+                message: err.description().to_owned(),
+            }),
+            io::ErrorKind::UnexpectedEof => Error::Transport(TransportError {
+                kind: TransportErrorKind::EndOfFile,
+                message: err.description().to_owned(),
+            }),
             _ => {
                 Error::Transport(TransportError {
                     kind: TransportErrorKind::Unknown,
@@ -482,7 +475,7 @@ pub fn new_protocol_error<S: Into<String>>(kind: ProtocolErrorKind, message: S) 
 }
 
 /// Information about errors that occur in the runtime library.
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct ProtocolError {
     /// Protocol error variant.
     ///
@@ -547,8 +540,8 @@ impl Display for ProtocolError {
 }
 
 impl TryFrom<i32> for ProtocolErrorKind {
-    type Err = Error;
-    fn try_from(from: i32) -> Result<Self, Self::Err> {
+    type Error = Error;
+    fn try_from(from: i32) -> Result<Self, Self::Error> {
         match from {
             0 => Ok(ProtocolErrorKind::Unknown),
             1 => Ok(ProtocolErrorKind::InvalidData),
@@ -557,12 +550,10 @@ impl TryFrom<i32> for ProtocolErrorKind {
             4 => Ok(ProtocolErrorKind::BadVersion),
             5 => Ok(ProtocolErrorKind::NotImplemented),
             6 => Ok(ProtocolErrorKind::DepthLimit),
-            _ => {
-                Err(Error::Protocol(ProtocolError {
-                    kind: ProtocolErrorKind::Unknown,
-                    message: format!("cannot convert {} to ProtocolErrorKind", from),
-                }))
-            }
+            _ => Err(Error::Protocol(ProtocolError {
+                kind: ProtocolErrorKind::Unknown,
+                message: format!("cannot convert {} to ProtocolErrorKind", from),
+            })),
         }
     }
 }
@@ -575,7 +566,7 @@ pub fn new_application_error<S: Into<String>>(kind: ApplicationErrorKind, messag
 
 /// Information about errors in auto-generated code or in user-implemented
 /// service handlers.
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct ApplicationError {
     /// Application error variant.
     ///
@@ -653,8 +644,8 @@ impl Display for ApplicationError {
 }
 
 impl TryFrom<i32> for ApplicationErrorKind {
-    type Err = Error;
-    fn try_from(from: i32) -> Result<Self, Self::Err> {
+    type Error = Error;
+    fn try_from(from: i32) -> Result<Self, Self::Error> {
         match from {
             0 => Ok(ApplicationErrorKind::Unknown),
             1 => Ok(ApplicationErrorKind::UnknownMethod),
@@ -667,12 +658,10 @@ impl TryFrom<i32> for ApplicationErrorKind {
             8 => Ok(ApplicationErrorKind::InvalidTransform),
             9 => Ok(ApplicationErrorKind::InvalidProtocol),
             10 => Ok(ApplicationErrorKind::UnsupportedClientType),
-            _ => {
-                Err(Error::Application(ApplicationError {
-                    kind: ApplicationErrorKind::Unknown,
-                    message: format!("cannot convert {} to ApplicationErrorKind", from),
-                }))
-            }
+            _ => Err(Error::Application(ApplicationError {
+                kind: ApplicationErrorKind::Unknown,
+                message: format!("cannot convert {} to ApplicationErrorKind", from),
+            })),
         }
     }
 }

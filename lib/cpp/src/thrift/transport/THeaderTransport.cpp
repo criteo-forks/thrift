@@ -30,12 +30,14 @@
 #include <zlib.h>
 
 using std::map;
-using boost::shared_ptr;
 using std::string;
 using std::vector;
 
 namespace apache {
 namespace thrift {
+
+using std::shared_ptr;
+
 namespace transport {
 
 using namespace apache::thrift::protocol;
@@ -195,7 +197,7 @@ void THeaderTransport::readHeaderFormat(uint16_t headerSize, uint32_t sz) {
   readHeaders_.clear(); // Clear out any previous headers.
 
   // skip over already processed magic(4), seqId(4), headerSize(2)
-  uint8_t* ptr = reinterpret_cast<uint8_t*>(rBuf_.get() + 10);
+  auto* ptr = reinterpret_cast<uint8_t*>(rBuf_.get() + 10);
 
   // Catch integer overflow, check for reasonable header size
   if (headerSize >= 16384) {
@@ -255,7 +257,7 @@ void THeaderTransport::readHeaderFormat(uint16_t headerSize, uint32_t sz) {
   }
 
   // Untransform the data section.  rBuf will contain result.
-  untransform(data, safe_numeric_cast<uint32_t>(static_cast<ptrdiff_t>(sz) - (data - rBuf_.get()))); 
+  untransform(data, safe_numeric_cast<uint32_t>(static_cast<ptrdiff_t>(sz) - (data - rBuf_.get())));
 }
 
 void THeaderTransport::untransform(uint8_t* ptr, uint32_t sz) {
@@ -273,9 +275,9 @@ void THeaderTransport::untransform(uint8_t* ptr, uint32_t sz) {
       stream.avail_in = sz;
 
       // Setting these to 0 means use the default free/alloc functions
-      stream.zalloc = (alloc_func)0;
-      stream.zfree = (free_func)0;
-      stream.opaque = (voidpf)0;
+      stream.zalloc = (alloc_func)nullptr;
+      stream.zfree = (free_func)nullptr;
+      stream.opaque = (voidpf)nullptr;
       err = inflateInit(&stream);
       if (err != Z_OK) {
         throw TApplicationException(TApplicationException::MISSING_RESULT,
@@ -315,7 +317,7 @@ void THeaderTransport::untransform(uint8_t* ptr, uint32_t sz) {
 void THeaderTransport::resizeTransformBuffer(uint32_t additionalSize) {
   if (tBufSize_ < wBufSize_ + DEFAULT_BUFFER_SIZE) {
     uint32_t new_size = wBufSize_ + DEFAULT_BUFFER_SIZE + additionalSize;
-    uint8_t* new_buf = new uint8_t[new_size];
+    auto* new_buf = new uint8_t[new_size];
     tBuf_.reset(new_buf);
     tBufSize_ = new_size;
   }
@@ -335,9 +337,9 @@ void THeaderTransport::transform(uint8_t* ptr, uint32_t sz) {
       stream.next_in = ptr;
       stream.avail_in = sz;
 
-      stream.zalloc = (alloc_func)0;
-      stream.zfree = (free_func)0;
-      stream.opaque = (voidpf)0;
+      stream.zalloc = (alloc_func)nullptr;
+      stream.zfree = (free_func)nullptr;
+      stream.opaque = (voidpf)nullptr;
       err = deflateInit(&stream, Z_DEFAULT_COMPRESSION);
       if (err != Z_OK) {
         throw TTransportException(TTransportException::CORRUPTED_DATA,
@@ -387,7 +389,7 @@ uint32_t THeaderTransport::getWriteBytes() {
  * Automatically advances ptr to after the written portion
  */
 void THeaderTransport::writeString(uint8_t*& ptr, const string& str) {
-  int32_t strLen = safe_numeric_cast<int32_t>(str.length());
+  auto strLen = safe_numeric_cast<int32_t>(str.length());
   ptr += writeVarint32(strLen, ptr);
   memcpy(ptr, str.c_str(), strLen); // no need to write \0
   ptr += strLen;
@@ -482,7 +484,7 @@ void THeaderTransport::flush() {
     // write info headers
 
     // for now only write kv-headers
-    int32_t headerCount = safe_numeric_cast<int32_t>(writeHeaders_.size());
+    auto headerCount = safe_numeric_cast<int32_t>(writeHeaders_.size());
     if (headerCount > 0) {
       pkt += writeVarint32(infoIdType::KEYVALUE, pkt);
       // Write key-value headers count
@@ -508,7 +510,7 @@ void THeaderTransport::flush() {
 
     // Pkt size
     ptrdiff_t szHbp = (headerStart - pktStart - 4);
-    if (static_cast<uint64_t>(szHbp) > static_cast<uint64_t>(std::numeric_limits<uint32_t>().max()) - (headerSize + haveBytes)) {
+    if (static_cast<uint64_t>(szHbp) > static_cast<uint64_t>((std::numeric_limits<uint32_t>().max)()) - (headerSize + haveBytes)) {
       throw TTransportException(TTransportException::CORRUPTED_DATA,
                                 "Header section size is unreasonable");
     }
@@ -524,7 +526,7 @@ void THeaderTransport::flush() {
     outTransport_->write(pktStart, szHbo - haveBytes + 4);
     outTransport_->write(wBuf_.get(), haveBytes);
   } else if (clientType == THRIFT_FRAMED_BINARY || clientType == THRIFT_FRAMED_COMPACT) {
-    uint32_t szHbo = (uint32_t)haveBytes;
+    auto szHbo = (uint32_t)haveBytes;
     uint32_t szNbo = htonl(szHbo);
 
     outTransport_->write(reinterpret_cast<uint8_t*>(&szNbo), 4);

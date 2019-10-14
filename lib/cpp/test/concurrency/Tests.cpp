@@ -25,9 +25,11 @@
 #include "TimerManagerTests.h"
 #include "ThreadManagerTests.h"
 
-int main(int argc, char** argv) {
+// The test weight, where 10 is 10 times more threads than baseline
+// and the baseline is optimized for running in valgrind
+static int WEIGHT = 10;
 
-  std::string arg;
+int main(int argc, char** argv) {
 
   std::vector<std::string> args(argc - 1 > 1 ? argc - 1 : 1);
 
@@ -35,6 +37,11 @@ int main(int argc, char** argv) {
 
   for (int ix = 1; ix < argc; ix++) {
     args[ix - 1] = std::string(argv[ix]);
+  }
+
+  if (getenv("VALGRIND") != nullptr) {
+	  // lower the scale of every test
+	  WEIGHT = 1;
   }
 
   bool runAll = args[0].compare("all") == 0;
@@ -45,10 +52,10 @@ int main(int argc, char** argv) {
 
     std::cout << "ThreadFactory tests..." << std::endl;
 
-    int reapLoops = 20;
-    int reapCount = 1000;
+    int reapLoops = 2 * WEIGHT;
+    int reapCount = 100 * WEIGHT;
     size_t floodLoops = 3;
-    size_t floodCount = 20000;
+    size_t floodCount = 500 * WEIGHT;
 
     std::cout << "\t\tThreadFactory reap N threads test: N = " << reapLoops << "x" << reapCount << std::endl;
 
@@ -85,18 +92,18 @@ int main(int argc, char** argv) {
 
     std::cout << "\t\tUtil minimum time" << std::endl;
 
-    int64_t time00 = Util::currentTime();
-    int64_t time01 = Util::currentTime();
+    int64_t time00 = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    int64_t time01 = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 
     std::cout << "\t\t\tMinimum time: " << time01 - time00 << "ms" << std::endl;
 
-    time00 = Util::currentTime();
+    time00 = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
     time01 = time00;
     size_t count = 0;
 
     while (time01 < time00 + 10) {
       count++;
-      time01 = Util::currentTime();
+      time01 = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
     }
 
     std::cout << "\t\t\tscall per ms: " << count / (time01 - time00) << std::endl;
@@ -114,6 +121,34 @@ int main(int argc, char** argv) {
       std::cerr << "\t\tTimerManager tests FAILED" << std::endl;
       return 1;
     }
+
+    std::cout << "\t\tTimerManager test01" << std::endl;
+
+    if (!timerManagerTests.test01()) {
+      std::cerr << "\t\tTimerManager tests FAILED" << std::endl;
+      return 1;
+    }
+
+    std::cout << "\t\tTimerManager test02" << std::endl;
+
+    if (!timerManagerTests.test02()) {
+      std::cerr << "\t\tTimerManager tests FAILED" << std::endl;
+      return 1;
+    }
+
+    std::cout << "\t\tTimerManager test03" << std::endl;
+
+    if (!timerManagerTests.test03()) {
+      std::cerr << "\t\tTimerManager tests FAILED" << std::endl;
+      return 1;
+    }
+
+    std::cout << "\t\tTimerManager test04" << std::endl;
+
+    if (!timerManagerTests.test04()) {
+      std::cerr << "\t\tTimerManager tests FAILED" << std::endl;
+      return 1;
+    }
   }
 
   if (runAll || args[0].compare("thread-manager") == 0) {
@@ -121,8 +156,8 @@ int main(int argc, char** argv) {
     std::cout << "ThreadManager tests..." << std::endl;
 
     {
-      size_t workerCount = 100;
-      size_t taskCount = 50000;
+      size_t workerCount = 10 * WEIGHT;
+      size_t taskCount = 500 * WEIGHT;
       int64_t delay = 10LL;
 
       ThreadManagerTests threadManagerTests;
@@ -160,13 +195,13 @@ int main(int argc, char** argv) {
 
       size_t minWorkerCount = 2;
 
-      size_t maxWorkerCount = 64;
+      size_t maxWorkerCount = 8;
 
-      size_t tasksPerWorker = 1000;
+      size_t tasksPerWorker = 100 * WEIGHT;
 
       int64_t delay = 5LL;
 
-      for (size_t workerCount = minWorkerCount; workerCount < maxWorkerCount; workerCount *= 4) {
+      for (size_t workerCount = minWorkerCount; workerCount <= maxWorkerCount; workerCount *= 4) {
 
         size_t taskCount = workerCount * tasksPerWorker;
 
